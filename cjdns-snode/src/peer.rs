@@ -101,7 +101,7 @@ impl Peers {
             } else {
                 Duration::from_secs(10)
             };
-            time::delay_for(delay).await;
+            time::sleep(delay).await;
         }
     }
 

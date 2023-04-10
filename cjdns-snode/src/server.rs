@@ -8,7 +8,6 @@ use std::time::{Duration, SystemTime};
 use anyhow::Error;
 use anyhow::Result;
 use futures::future::try_join_all;
-use futures::StreamExt;
 use http::Uri;
 use parking_lot::Mutex;
 use tokio::task;
@@ -41,7 +40,7 @@ pub async fn main(config: Config) -> Result<()> {
     let mut tasks = Vec::new();
 
     // The server context instance
-    let (peers, announces) = create_peers();
+    let (peers, mut announces) = create_peers();
     let peers = Arc::new(peers);
     let server = Arc::new(Server::new(Arc::clone(&peers)));
 
@@ -63,7 +62,13 @@ pub async fn main(config: Config) -> Result<()> {
     {
         let server = Arc::clone(&server);
         let h = task::spawn(async move {
-            announces.for_each(|ann| server.handle_announce(ann, false)).await;
+            loop {
+                if let Some(ann) = announces.recv().await {
+                    server.handle_announce(ann, false).await;
+                } else {
+                    println!("Anns websocker returned None");
+                }
+            }
         });
         tasks.push(h);
     }

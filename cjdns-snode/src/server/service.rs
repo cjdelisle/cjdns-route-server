@@ -83,7 +83,7 @@ async fn check_connection_alive(mut cjdns: Connection) -> Result<(), Error> {
     const CHECK_CONNECTION_DELAY: Duration = Duration::from_secs(5);
 
     loop {
-        time::delay_for(CHECK_CONNECTION_DELAY).await;
+        time::sleep(CHECK_CONNECTION_DELAY).await;
 
         if count_handlers(&mut cjdns).await? == 0 {
             return Err(anyhow!("Call to UpperDistributor_listHandlers returned 0 handlers - connection aborted?"));

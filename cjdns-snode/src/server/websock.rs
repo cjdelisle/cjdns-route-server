@@ -5,6 +5,7 @@ use futures::future::ready;
 use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
+use tokio_tungstenite::MaybeTlsStream;
 use tokio_tungstenite::WebSocketStream;
 use warp::ws::WebSocket;
 
@@ -15,7 +16,7 @@ pub trait WebSock {
     fn ws_split(self) -> (Box<WsWrite>, Box<WsRead>);
 }
 
-impl WebSock for WebSocketStream<TcpStream> {
+impl WebSock for WebSocketStream<MaybeTlsStream<TcpStream>> {
     fn ws_split(self) -> (Box<WsWrite>, Box<WsRead>) {
         let (ws_write, ws_read) = self.split();
         let ws_write = ws_write
