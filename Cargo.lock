@@ -1003,7 +1003,7 @@ checksum = "3304a64d199bb964be99741b7a14d26972741915b3649639149b2479bb46f4b5"
 [[package]]
 name = "libsodium-sys"
 version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?rev=9f6a18d40a4db253edfebac9f2ce5c22d09b1f47#9f6a18d40a4db253edfebac9f2ce5c22d09b1f47"
+source = "git+https://github.com/cjdelisle/sodiumoxide?rev=f79b6656b84f02b049470f9ad556a6a0c9980bd7#f79b6656b84f02b049470f9ad556a6a0c9980bd7"
 dependencies = [
  "cc",
  "libc",
@@ -1830,7 +1830,7 @@ dependencies = [
 [[package]]
 name = "sodiumoxide"
 version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?rev=9f6a18d40a4db253edfebac9f2ce5c22d09b1f47#9f6a18d40a4db253edfebac9f2ce5c22d09b1f47"
+source = "git+https://github.com/cjdelisle/sodiumoxide?rev=f79b6656b84f02b049470f9ad556a6a0c9980bd7#f79b6656b84f02b049470f9ad556a6a0c9980bd7"
 dependencies = [
  "ed25519",
  "libc",
