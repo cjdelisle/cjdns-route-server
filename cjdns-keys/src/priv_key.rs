@@ -4,12 +4,13 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 
 use regex::Regex;
-use sodiumoxide::crypto::scalarmult;
-use sodiumoxide::randombytes::randombytes;
+
+use cjdns_crypto::random::Random;
+use cjdns_crypto::scalarmult;
 
 use crate::{
     errors::{KeyCreationError, Result},
-    utils::vec_to_array32,
+    utils::{debug_fmt, vec_to_array32},
 };
 
 lazy_static! {
@@ -17,7 +18,7 @@ lazy_static! {
 }
 
 /// CJDNS private key type
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CJDNSPrivateKey {
     k: [u8; 32],
 }
@@ -53,14 +54,29 @@ impl Deref for CJDNSPrivateKey {
     }
 }
 
+impl std::fmt::Debug for CJDNSPrivateKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        debug_fmt(self.k, f)
+    }
+}
+
 impl CJDNSPrivateKey {
-    pub(crate) fn new() -> Self {
-        let bytes = randombytes(32);
-        CJDNSPrivateKey { k: vec_to_array32(bytes) }
+    pub fn new_random<R: Random>(rand: &R) -> Self {
+        let mut random_bytes = [0_u8; Self::SIZE];
+        rand.random_bytes(&mut random_bytes);
+        CJDNSPrivateKey { k: random_bytes }
     }
 
-    pub(crate) fn to_scalar(&self) -> scalarmult::Scalar {
+    pub fn to_scalar(&self) -> scalarmult::Scalar {
         scalarmult::Scalar(self.k)
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.k == [0; 32]
+    }
+
+    pub fn raw(&self) -> &[u8; Self::SIZE] {
+        &self.k
     }
 }
 
@@ -96,5 +112,13 @@ mod tests {
         let priv_key_bytes = priv_key.k;
         assert_eq!(&(*priv_key), &priv_key_bytes);
         assert_eq!(CJDNSPrivateKey::from(priv_key_bytes), priv_key);
+    }
+
+    #[test]
+    fn test_zero_priv_key() {
+        let zeroes = [0_u8; 32];
+        let zero = CJDNSPrivateKey::from(zeroes);
+        assert!(zero.is_zero());
+        assert!(!priv_key("90a66780a0dc2ca735bc0c161d3e92c876935981e8658c32a846f79947a923bd").is_zero());
     }
 }
