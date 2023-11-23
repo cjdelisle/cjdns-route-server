@@ -10,11 +10,11 @@ use tokio::time;
 
 use cjdns_crypto::hash::sha256;
 
-use crate::ConnectionOptions;
 use crate::errors::{ConnOptions, Error};
 use crate::func_list::Funcs;
 use crate::msgs::{self, Empty, Request};
 use crate::txid::Counter;
+use crate::ConnectionOptions;
 
 const PING_TIMEOUT: Duration = Duration::from_millis(1_000);
 const DEFAULT_TIMEOUT: Duration = Duration::from_millis(10_000);
@@ -177,14 +177,18 @@ impl Connection {
         // Send encoded request
         let msg = req.to_bencode()?;
         //dbg!(String::from_utf8_lossy(&msg));
-        let mut socket = self.socket.lock().await;
+        let socket = self.socket.lock().await;
         socket.send(&msg).await.map_err(|e| Error::NetworkOperation(e))?;
 
-        // Limit receive packet lenght to typical Ethernet MTU for now; need to check actual max packet length on CJDNS Node side though.
-        let mut buf = [0; 1500];
+        // Default MTU of loopback device in Linux, allocating on heap because of size
+        let mut buf = vec![0; 65536];
 
         // Reseive encoded response synchronously
-        let received = socket.recv(&mut buf).await.map_err(|e| Error::NetworkOperation(e))?;
+        let timeout = Duration::from_secs(10);
+        let received = time::timeout(timeout, socket.recv(&mut buf))
+            .await
+            .map_err(|_| Error::TimeOut(timeout))?
+            .map_err(|e| Error::NetworkOperation(e))?;
         let response = &buf[..received];
         //dbg!(String::from_utf8_lossy(&response));
 
