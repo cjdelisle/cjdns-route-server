@@ -122,11 +122,13 @@ impl Connection {
             args,
         };
 
-        let resp: msgs::GenericResponse<P> = self.send_msg(&msg).await?;
-        check_txid(&msg.txid, &resp.txid)?;
-        check_remote_error(&resp.error)?;
+        let resp = self.send_msg(&msg).await?;
 
-        Ok(resp.payload)
+        let meta: msgs::ResponseMetadata = resp.decode()?;
+        check_txid(&msg.txid, &meta.txid)?;
+        check_remote_error(&meta.error)?;
+
+        resp.decode()
     }
 
     async fn call_func_auth<A: msgs::Args, P: msgs::Payload>(&mut self, remote_fn_name: &str, args: A) -> Result<P, Error> {
@@ -162,17 +164,20 @@ impl Connection {
         msg.hash = msg_hash;
 
         // Send/receive
-        let resp: msgs::GenericResponse<P> = self.send_msg(&msg).await?;
-        check_txid(&msg.txid, &resp.txid)?;
-        check_remote_error(&resp.error)?;
+        let resp = self.send_msg(&msg).await?;
 
-        Ok(resp.payload)
+        // Decode metadata first, check for errors
+        let meta: msgs::ResponseMetadata = resp.decode()?;
+        check_txid(&msg.txid, &meta.txid)?;
+        check_remote_error(&meta.error)?;
+
+        // Decode payload
+        resp.decode()
     }
 
-    async fn send_msg<RQ, RS>(&mut self, req: &RQ) -> Result<RS, Error>
+    async fn send_msg<R>(&mut self, req: &R) -> Result<msgs::RawResponse, Error>
     where
-        RQ: msgs::Request,
-        RS: msgs::Response,
+        R: msgs::Request,
     {
         // Send encoded request
         let msg = req.to_bencode()?;
@@ -183,17 +188,17 @@ impl Connection {
         // Default MTU of loopback device in Linux, allocating on heap because of size
         let mut buf = vec![0; 65536];
 
-        // Reseive encoded response synchronously
+        // Receive encoded response synchronously
         let timeout = Duration::from_secs(10);
         let received = time::timeout(timeout, socket.recv(&mut buf))
             .await
             .map_err(|_| Error::TimeOut(timeout))?
             .map_err(|e| Error::NetworkOperation(e))?;
-        let response = &buf[..received];
-        //dbg!(String::from_utf8_lossy(&response));
+        buf.truncate(received);
+        //dbg!(String::from_utf8_lossy(&buf));
 
-        // Decode response
-        RS::from_bencode(response)
+        // Return decodable response
+        Ok(msgs::RawResponse::new(buf))
     }
 }
 
