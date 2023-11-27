@@ -14,7 +14,7 @@ mod internal {
 
     use crate::errors::Error;
 
-    use super::{Args, Payload};
+    use super::Args;
 
     /// Internal trait for the RPC request type. Implemented by `Query` and `AuthQuery`.
     pub(crate) trait Request: Sized {
@@ -75,18 +75,30 @@ mod internal {
         pub(crate) hash: String,
     }
 
-    /// Generic RPC response.
+    pub(crate) struct RawResponse {
+        bencode_data: Vec<u8>,
+    }
+
+    impl RawResponse {
+        #[inline]
+        pub(crate) fn new(bencode_data: Vec<u8>) -> Self {
+            RawResponse { bencode_data }
+        }
+
+        #[inline]
+        pub(crate) fn decode<T: Response>(&self) -> Result<T, Error> {
+            T::from_bencode(&self.bencode_data)
+        }
+    }
+
+    /// RPC response metadata.
     #[derive(Deserialize, Clone, PartialEq, Eq, Debug)]
-    pub(crate) struct GenericResponse<P: Payload> {
+    pub(crate) struct ResponseMetadata {
         #[serde(rename = "txid")]
         pub(crate) txid: String,
 
         #[serde(rename = "error", default)]
         pub(crate) error: String,
-
-        #[serde(flatten, default)]
-        #[serde(bound(deserialize = "P: DeserializeOwned"))]
-        pub(crate) payload: P,
     }
 }
 
@@ -94,13 +106,13 @@ mod internal {
 pub trait Args: Serialize {}
 
 /// Trait for RPC query return value. Can be any deserializable type with `Default`.
-pub trait Payload: DeserializeOwned + Default {}
+pub trait Payload: DeserializeOwned {}
 
 // Blanket `Args` impl for any serializable type.
 impl<T: Serialize> Args for T {}
 
 // Blanket `Payload` impl for any deserializable type with `Default`.
-impl<T: DeserializeOwned + Default> Payload for T {}
+impl<T: DeserializeOwned> Payload for T {}
 
 /// Empty payload or arguments.
 #[derive(Deserialize, Serialize, Default, Clone, PartialEq, Eq, Debug)]
