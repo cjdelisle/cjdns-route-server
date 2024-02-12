@@ -10,8 +10,6 @@ description = "Tools for dumping and injecting cjdns traffic"
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true }
-env_logger = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }

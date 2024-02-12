@@ -9,13 +9,6 @@ license = "GPL-3.0-or-later"
 description = "cjdns Bencode library"
 
 [dependencies]
-anyhow = { workspace = true }
 bendy = { workspace = true }
-dirs = { workspace = true }
 hex = { workspace = true }
-rand = { workspace = true }
-regex = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-sodiumoxide = { workspace = true }
-thiserror = { workspace = true }

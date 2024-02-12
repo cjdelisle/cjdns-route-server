@@ -249,16 +249,9 @@ dependencies = [
 name = "cjdns-bencode"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "bendy",
- "dirs",
  "hex",
- "rand 0.7.3",
- "regex",
  "serde",
- "serde_json",
- "sodiumoxide",
- "thiserror",
 ]
 
 [[package]]
@@ -327,8 +320,6 @@ dependencies = [
  "cjdns-ctrl",
  "cjdns-hdr",
  "cjdns-keys",
- "clap",
- "env_logger",
  "hex",
  "log",
  "serde",
