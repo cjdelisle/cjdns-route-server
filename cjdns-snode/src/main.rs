@@ -35,10 +35,6 @@ fn now_sec() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
 }
 
-fn short_file(file: &str) -> &str {
-    file.rsplit('/').next().unwrap_or(file)
-}
-
 /// Main function.
 async fn run() -> Result<()> {
     // Initialize logger
@@ -49,7 +45,7 @@ async fn run() -> Result<()> {
                 "{} {} {}:{} {}",
                 now_sec(),
                 record.level(),
-                short_file(record.file().unwrap_or("?")),
+                record.file().unwrap_or("?"),
                 record.line().unwrap_or(0),
                 record.args()
             )
@@ -72,7 +68,7 @@ async fn run() -> Result<()> {
 mod args {
     use std::path::PathBuf;
 
-    use clap::Clap;
+    use clap::Parser;
 
     /// Parse command line.
     pub(super) fn parse() -> Opts {
@@ -80,11 +76,11 @@ mod args {
     }
 
     /// CJDNS supernode.
-    #[derive(Clap)]
-    #[clap(version = "0.1.0", author = "The CJDNS development team")]
+    #[derive(Parser)]
+    #[command(version = "0.1.0", author = "The CJDNS development team")]
     pub struct Opts {
         /// Config file path
-        #[clap(long = "config", default_value = "./config.json")]
+        #[arg(long = "config", default_value = "./config.json")]
         pub config_file: PathBuf,
     }
 }

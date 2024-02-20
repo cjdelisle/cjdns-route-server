@@ -41,7 +41,7 @@ pub async fn main(config: Config) -> Result<()> {
     let mut tasks = Vec::new();
 
     // The server context instance
-    let (peers, announces) = create_peers();
+    let (peers, mut announces) = create_peers();
     let peers = Arc::new(peers);
     let server = Arc::new(Server::new(Arc::clone(&peers)));
 
@@ -63,7 +63,9 @@ pub async fn main(config: Config) -> Result<()> {
     {
         let server = Arc::clone(&server);
         let h = task::spawn(async move {
-            announces.for_each(|ann| server.handle_announce(ann, false)).await;
+            while let Some(ann) = announces.recv().await {
+                server.handle_announce(ann, false).await;
+            }
         });
         tasks.push(h);
     }
@@ -197,8 +199,8 @@ impl Server {
                     ann.node_ip,
                     ann.header.timestamp,
                     ann.header.is_reset,
-                    ann.entities.iter().filter(|&a| matches!(&a, Entity::Peer{..})).count(),
-                    ann.entities.iter().filter(|&a| matches!(&a, Entity::LinkState{..})).count(),
+                    ann.entities.iter().filter(|&a| matches!(&a, Entity::Peer { .. })).count(),
+                    ann.entities.iter().filter(|&a| matches!(&a, Entity::LinkState { .. })).count(),
                     node.is_some(),
                     if node.is_none() && !ann.header.is_reset { " ERR_UNKNOWN" } else { "" }
                 );

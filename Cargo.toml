@@ -16,7 +16,7 @@ members = [
 
 [workspace.dependencies]
 anyhow = "1.0"
-dirs = "3.0"
+dirs = "5"
 hex = "0.4"
 rand = "0.7"
 regex = "1.3"
@@ -26,20 +26,19 @@ sodiumoxide = { git = "https://github.com/cjdelisle/sodiumoxide", rev = "9f6a18d
 libsodium-sys = { git = "https://github.com/cjdelisle/sodiumoxide", rev = "9f6a18d40a4db253edfebac9f2ce5c22d09b1f47", version = "0.2" }
 bendy = { git = "https://github.com/CJDNS-Development-Team/bendy-cjdns", tag = "v0.3.2-cjdns", features = ["std", "serde"] }
 thiserror = "1.0"
-# tokio = { version = "0.2", features = ["fs", "net", "macros", "time"] }
-tokio = { version = "0.2" }
-warp = "0.2"
-tokio-tungstenite = "0.11"
-clap = { version = "3.0.0-beta.1", default-features = false, features = [ "std", "derive" ] }
-env_logger = "0.7"
+tokio = { version = "^1", features = ["full"] }
+warp = "0.3"
+tokio-tungstenite = "0.21"
+clap = { version = "4", features = [ "derive" ] }
+env_logger = "0.11"
 futures = "0.3"
-http = "0.2"
+http = "1"
 lazy_static = "1.4"
 log = "0.4"
-parking_lot = "0.11"
+parking_lot = "0.12"
 rmpv = "0.4" # msgpack encoding
 chrono = "0.4"
-num_enum = "0.5"
+num_enum = "0.7"
 data-encoding = "2.3"
 
 cjdns-admin = { path = "cjdns-admin" }

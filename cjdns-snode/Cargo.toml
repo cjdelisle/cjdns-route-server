@@ -23,7 +23,7 @@ hex = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["fs", "net", "macros", "time", "sync"] }
+tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 warp = { workspace = true }
 sodiumoxide = { workspace = true }

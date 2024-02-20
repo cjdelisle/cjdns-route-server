@@ -16,7 +16,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
-tokio = { workspace = true, features = ["fs", "macros", "net", "udp", "time", "signal"] }
+tokio = { workspace = true }
 
 cjdns-admin = { workspace = true }
 cjdns-bencode = { workspace = true }
