@@ -155,21 +155,31 @@ fn compute_routing_label(nodes: &Nodes, rev_path: &[CJDNS_IP6]) -> Option<(Routi
         for nip in rev_path.iter() {
             if let Some(node) = nodes.by_ip(nip) {
                 if let Some(last) = last {
-                    if let Some(Some(link)) = node.inward_links_by_ip.lock().get(&last.ipv6).map(|ls| ls.get(0)) {
-                        let mut label = RoutingLabel::try_new(link.label.bits() as u64)?;
-                        let (_, cur_form_num) = get_encoding_form(label, &last.encoding_scheme).ok()?;
-                        if cur_form_num < form_num {
-                            label = re_encode(label, &last.encoding_scheme, Some(form_num)).ok()?;
+                    if let (Some(Some(greta_opinion_link)), Some(Some(yury_opinion_link))) = (
+                        node.inward_links_by_ip.lock().get(&last.ipv6).map(|ls| ls.get(0)),
+                        last.inward_links_by_ip.lock().get(&node.ipv6).map(|ls| ls.get(0)),
+                    ) {
+                        // Yury sends message to Caleb via Greta
+                        // last stand for yury
+                        // node stands for greta
+                        let label_yg_32 = RoutingLabel::try_new(yury_opinion_link.peer_num as u32)?;
+                        let mut label_yg = RoutingLabel::try_new(yury_opinion_link.peer_num as u64)?;
+                        let label_gy = RoutingLabel::try_new(greta_opinion_link.peer_num as u64)?;
+                        let (_, cur_form_num_yg) = get_encoding_form(label_yg, &node.encoding_scheme).ok()?;
+                        let (_, cur_form_num_gy) = get_encoding_form(label_gy, &last.encoding_scheme).ok()?;
+                        let label_yg_backup = label_yg_32;
+                        if cur_form_num_yg != form_num {
+                            label_yg = re_encode(label_yg, &last.encoding_scheme, Some(form_num)).ok()?;
                         }
-                        labels.push(label);
+                        labels.push(label_gy);
                         let hop = Hop {
-                            label: label.clone(),
-                            orig_label: link.label.clone(),
+                            label: label_yg.clone(),
+                            orig_label: label_yg_backup.clone(),
                             scheme: last.encoding_scheme.clone(),
                             inverse_form_num: form_num,
                         };
                         hops.push(hop);
-                        form_num = link.encoding_form_number;
+                        form_num = cur_form_num_gy;
                     } else {
                         return None;
                     }
