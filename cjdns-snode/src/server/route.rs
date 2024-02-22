@@ -168,10 +168,10 @@ fn compute_routing_label(nodes: &Nodes, rev_path: &[CJDNS_IP6]) -> Option<(Routi
                         let (_, cur_form_num_yg) = get_encoding_form(label_yg, &node.encoding_scheme).ok()?;
                         let (_, cur_form_num_gy) = get_encoding_form(label_gy, &last.encoding_scheme).ok()?;
                         let label_yg_backup = label_yg_32;
-                        if cur_form_num_yg != form_num {
+                        if cur_form_num_yg < form_num {
                             label_yg = re_encode(label_yg, &last.encoding_scheme, Some(form_num)).ok()?;
                         }
-                        labels.push(label_gy);
+                        labels.push(label_yg);
                         let hop = Hop {
                             label: label_yg.clone(),
                             orig_label: label_yg_backup.clone(),
