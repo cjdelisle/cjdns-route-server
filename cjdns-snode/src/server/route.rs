@@ -74,7 +74,7 @@ fn get_route_impl(nodes: &Nodes, routing: &mut Routing, src: Arc<Node>, dst: Arc
         routing.last_rebuild = now;
     }
 
-    let cache_key = CacheKey(dst.ipv5.clone(), src.ipv6.clone());
+    let cache_key = CacheKey(dst.ipv6.clone(), src.ipv6.clone());
     if let Some(Some(cached_entry)) = routing.route_cache.get(&cache_key).cloned() {
         return Some(cached_entry);
     }
@@ -214,6 +214,10 @@ impl Route {
 
 impl Routing {
     pub(super) fn new() -> Self {
-        Routing { dijkstra: None }
+        Routing {
+            last_rebuild: Instant::now(),
+            route_cache: HashMap::new(),
+            dijkstra: None,
+        }
     }
 }

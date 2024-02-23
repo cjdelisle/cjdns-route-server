@@ -4,11 +4,10 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
+use sodiumoxide::crypto::hash::sha256::hash;
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tokio::time;
-
-// use cjdns_crypto::hash::sha256;
 
 use crate::errors::{ConnOptions, Error};
 use crate::func_list::Funcs;
