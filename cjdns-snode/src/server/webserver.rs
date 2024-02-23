@@ -9,7 +9,7 @@ use warp::{Filter, Rejection, Reply};
 use crate::server::Server;
 
 pub(super) async fn test_srv_task(server: Arc<Server>) {
-    let routes = api(server);
+    let routes = api(server).recover(handlers::rejection);
     warp::serve(routes).run(([127, 0, 0, 1], 3333)).await;
 }
 
@@ -28,10 +28,14 @@ fn api(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejecti
 }
 
 fn info_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path::end().and(with_server(server)).and_then(handlers::handle_info)
+    warp::path::end()
+        .and(with_server(server))
+        .and_then(handlers::handle_info)
 }
 
-fn debug_node_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn debug_node_route(
+    server: Arc<Server>,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path::path("debugnode")
         .and(warp::path::param())
         .and(with_server(server))
@@ -54,7 +58,9 @@ fn path_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = 
         .and_then(handlers::handle_path)
 }
 
-fn ni_with_ip_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+fn ni_with_ip_route(
+    server: Arc<Server>,
+) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path::path("ni")
         .and(warp::path::param())
         .and(with_server(server))
@@ -69,7 +75,9 @@ fn ni_empty(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Re
 }
 
 fn walk_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-    warp::path::path("walk").and(with_server(server)).and_then(handlers::handle_walk)
+    warp::path::path("walk")
+        .and(with_server(server))
+        .and_then(handlers::handle_walk)
 }
 
 fn ws_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
@@ -77,19 +85,23 @@ fn ws_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Re
         .and(warp::addr::remote())
         .and(with_server(server))
         .and(warp::ws())
-        .map(|addr: Option<SocketAddr>, server: Arc<Server>, ws_manager: warp::ws::Ws| {
-            let addr = addr.expect("no remote addr").ip().to_string();
-            let peers = Arc::clone(&server.peers);
-            ws_manager.on_upgrade(move |ws_conn| async move {
-                let res = peers.accept_incoming_connection(addr, ws_conn).await;
-                if let Err(err) = res {
-                    warn!("WebSocket error: {}", err);
-                }
-            })
-        })
+        .map(
+            |addr: Option<SocketAddr>, server: Arc<Server>, ws_manager: warp::ws::Ws| {
+                let addr = addr.expect("no remote addr").ip().to_string();
+                let peers = Arc::clone(&server.peers);
+                ws_manager.on_upgrade(move |ws_conn| async move {
+                    let res = peers.accept_incoming_connection(addr, ws_conn).await;
+                    if let Err(err) = res {
+                        warn!("WebSocket error: {}", err);
+                    }
+                })
+            },
+        )
 }
 
-fn with_server(server: Arc<Server>) -> impl Filter<Extract = (Arc<Server>,), Error = Infallible> + Clone {
+fn with_server(
+    server: Arc<Server>,
+) -> impl Filter<Extract = (Arc<Server>,), Error = Infallible> + Clone {
     warp::any().map(move || server.clone())
 }
 
@@ -115,13 +127,86 @@ mod handlers {
 
     use self::warp_pretty_print_json_reply::reply_json;
 
-    #[derive(Error, Debug)]
+    #[derive(Error, Debug, strum::EnumDiscriminants)]
     enum WebServerError {
         #[error("Bad IPv6 address '{0}': {1}")]
         BadIP6Address(String, String),
+        #[error(transparent)]
+        RoutingError(#[from] crate::server::route::RoutingError),
+    }
+
+    impl From<WebServerErrorDiscriminants> for StatusCode {
+        fn from(from: WebServerErrorDiscriminants) -> Self {
+            use WebServerErrorDiscriminants::*;
+            match from {
+                BadIP6Address => Self::BAD_REQUEST,
+                RoutingError => Self::INTERNAL_SERVER_ERROR,
+            }
+        }
+    }
+
+    impl From<&WebServerError> for StatusCode {
+        fn from(from: &WebServerError) -> Self {
+            WebServerErrorDiscriminants::from(from).into()
+        }
     }
 
     impl Reject for WebServerError {}
+
+    // This function receives a `Rejection` and tries to return a custom
+    // value, otherwise simply passes the rejection along.
+    pub async fn rejection(err: Rejection) -> Result<impl Reply, Infallible> {
+        let code;
+        let message: String;
+        if err.is_not_found() {
+            code = StatusCode::NOT_FOUND;
+            message = "NOT_FOUND".to_owned();
+        } else if let Some(err) = err.find::<WebServerError>() {
+            code = err.into();
+            message = err.to_string();
+        } else if let Some(e) = err.find::<warp::filters::body::BodyDeserializeError>() {
+            code = StatusCode::BAD_REQUEST;
+            message = format!("{}", e);
+        } else if let Some(_err) = err.find::<warp::reject::UnsupportedMediaType>() {
+            code = StatusCode::BAD_REQUEST;
+            message = "expected Content-type: application/json".to_owned();
+        } else if let Some(_err) = err.find::<warp::reject::PayloadTooLarge>() {
+            code = StatusCode::BAD_REQUEST;
+            message = "request body is TOO LARGE".to_owned();
+        } else if let Some(err) = err.find::<warp::reject::MethodNotAllowed>() {
+            code = StatusCode::METHOD_NOT_ALLOWED;
+            message = format!("{:?}", err);
+        } else {
+            code = StatusCode::INTERNAL_SERVER_ERROR;
+            message = format!("{:?}", err);
+        }
+
+        let json = {
+            let reason = code.canonical_reason();
+            let code = code.as_u16();
+            match &reason {
+                None => error!("{}: {}", code, message),
+                Some(reason) => error!("{}: {}: {}", code, reason, message),
+            }
+            /// An API error serializable to JSON.
+            #[derive(serde::Serialize)]
+            #[serde(rename_all = "camelCase")]
+            pub enum ErrReply {
+                Err {
+                    code: u16,
+                    reason: Option<&'static str>,
+                    message: String,
+                },
+            }
+            warp::reply::json(&ErrReply::Err {
+                code,
+                reason,
+                message,
+            })
+        };
+
+        Ok(warp::reply::with_status(json, code))
+    }
 
     pub(super) async fn handle_info(server: Arc<Server>) -> Result<impl Reply, Infallible> {
         let peers_info = server.peers.get_info();
@@ -146,8 +231,12 @@ mod handlers {
         Ok(reply_json(&reply))
     }
 
-    pub(super) async fn handle_debug_node(ip6: String, server: Arc<Server>) -> Result<StatusCode, Rejection> {
-        let ip = CJDNS_IP6::try_from(ip6.as_str()).map_err(|e| warp::reject::custom(WebServerError::BadIP6Address(ip6, e.to_string())))?;
+    pub(super) async fn handle_debug_node(
+        ip6: String,
+        server: Arc<Server>,
+    ) -> Result<StatusCode, Rejection> {
+        let ip = CJDNS_IP6::try_from(ip6.as_str())
+            .map_err(|e| warp::reject::custom(WebServerError::BadIP6Address(ip6, e.to_string())))?;
         server.mut_state.lock().debug_node = Some(ip);
         return Ok(StatusCode::OK);
     }
@@ -156,9 +245,15 @@ mod handlers {
         Ok(server.nodes.anns_dump())
     }
 
-    pub(super) async fn handle_path(src: String, tar: String, server: Arc<Server>) -> Result<impl Reply, Rejection> {
-        let src_ip = CJDNS_IP6::try_from(src.as_str()).map_err(|e| warp::reject::custom(WebServerError::BadIP6Address(src, e.to_string())))?;
-        let tar_ip = CJDNS_IP6::try_from(tar.as_str()).map_err(|e| warp::reject::custom(WebServerError::BadIP6Address(tar, e.to_string())))?;
+    pub(super) async fn handle_path(
+        src: String,
+        tar: String,
+        server: Arc<Server>,
+    ) -> Result<impl Reply, Rejection> {
+        let src_ip = CJDNS_IP6::try_from(src.as_str())
+            .map_err(|e| warp::reject::custom(WebServerError::BadIP6Address(src, e.to_string())))?;
+        let tar_ip = CJDNS_IP6::try_from(tar.as_str())
+            .map_err(|e| warp::reject::custom(WebServerError::BadIP6Address(tar, e.to_string())))?;
         let src = server.nodes.by_ip(&src_ip);
         let tar = server.nodes.by_ip(&tar_ip);
         warn!("http getRoute req {} {}", src_ip, tar_ip);
@@ -168,13 +263,15 @@ mod handlers {
         if tar.is_none() {
             return Ok("tar not found".to_string());
         }
-        match get_route(server.clone(), src, tar) {
-            Ok(r) => Ok(serde_json::to_string_pretty(&r).unwrap()),
-            Err(e) => Ok(format!("{:?}", e)),
-        }
+        get_route(server.clone(), src, tar)
+            .map(|r| serde_json::to_string_pretty(&r).unwrap())
+            .map_err(|err| warp::reject::custom(WebServerError::RoutingError(err)))
     }
 
-    pub(super) async fn handle_ni_with_ip(ip6: String, server: Arc<Server>) -> Result<impl Reply, Infallible> {
+    pub(super) async fn handle_ni_with_ip(
+        ip6: String,
+        server: Arc<Server>,
+    ) -> Result<impl Reply, Infallible> {
         if let Ok(ip6) = CJDNS_IP6::try_from(ip6.as_str()) {
             if let Some(node) = server.nodes.by_ip(&ip6) {
                 let node_state = node.mut_state.read();
@@ -267,7 +364,12 @@ mod handlers {
                     "node".to_string(),
                     make_timestamp(node.mut_state.read().timestamp) / 1000,
                     "-".to_string(),
-                    format!("v{}.{}.{}", node.version, RoutingLabel::<u64>::self_reference(), node.key),
+                    format!(
+                        "v{}.{}.{}",
+                        node.version,
+                        RoutingLabel::<u64>::self_reference(),
+                        node.key
+                    ),
                     json_encoding_scheme(&node.encoding_scheme),
                     node.ipv6.to_string(),
                 ]);
@@ -349,7 +451,10 @@ mod handlers {
                     "version": v,
                 }}
             }
-            Entity::EncodingScheme { ref hex, ref scheme } => {
+            Entity::EncodingScheme {
+                ref hex,
+                ref scheme,
+            } => {
                 json! {{
                     "type": "EncodingScheme",
                     "hex": hex.clone(),
@@ -411,7 +516,8 @@ mod handlers {
                 match self.inner {
                     Ok(body) => {
                         let mut res = Response::new(body.into());
-                        res.headers_mut().insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+                        res.headers_mut()
+                            .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
                         res
                     }
                     Err(()) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -450,7 +556,11 @@ mod node_info {
                 let node_state = node.mut_state.read();
                 let announcements = node_state.announcements.len() as u64;
                 total_ann += announcements;
-                let rst = node_state.reset_msg.is_some() && node_state.announcements.iter().all(|ann| Some(ann) != node_state.reset_msg.as_ref());
+                let rst = node_state.reset_msg.is_some()
+                    && node_state
+                        .announcements
+                        .iter()
+                        .all(|ann| Some(ann) != node_state.reset_msg.as_ref());
                 if rst {
                     resets += 1;
                 }
@@ -462,6 +572,49 @@ mod node_info {
             })
             .collect::<Vec<_>>();
 
-        NodesInfo { nodes, total_ann, resets }
+        NodesInfo {
+            nodes,
+            total_ann,
+            resets,
+        }
     }
 }
+
+// use warp::http::StatusCode;
+//
+// #[derive(thiserror::Error, Debug, strum::EnumDiscriminants)]
+// pub enum CustomError {
+//     #[error("{0}")]
+//     Anyhow(anyhow::Error),
+//     #[error("{0}")]
+//     BadRequest(anyhow::Error),
+//     #[error("{0}")]
+//     NotFound(anyhow::Error),
+// }
+// impl warp::reject::Reject for CustomError {}
+//
+// impl Clone for CustomError {
+//     fn clone(&self) -> Self {
+//         match self {
+//             Self::Anyhow(err) => Self::Anyhow(anyhow!("{err}")),
+//             Self::BadRequest(err) => Self::BadRequest(anyhow!("{err}")),
+//             Self::NotFound(err) => Self::NotFound(anyhow!("{err}")),
+//         }
+//     }
+// }
+//
+// impl From<&CustomError> for StatusCode {
+//     fn from(from: &Error) -> Self {
+//         CustomErrorDiscriminants::from(from).into()
+//     }
+// }
+//
+// impl From<CustomErrorDiscriminants> for StatusCode {
+//     fn from(from: CustomErrorDiscriminants) -> Self {
+//         match from {
+//             From::Anyhow => Self::INTERNAL_SERVER_ERROR,
+//             From::BadRequest => Self::BAD_REQUEST,
+//             From::NotFound => Self::NOT_FOUND,
+//         }
+//     }
+// }

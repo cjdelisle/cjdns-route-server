@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::Error;
 use anyhow::Result;
 use futures::future::try_join_all;
-use futures::StreamExt;
+// use futures::StreamExt;
 use http::Uri;
 use parking_lot::Mutex;
 use tokio::task;
@@ -48,7 +48,9 @@ pub async fn main(config: Config) -> Result<()> {
     // Run timeout task
     {
         let server = Arc::clone(&server);
-        let h = task::spawn(periodic_task(KEEP_TABLE_CLEAN_CYCLE, move || server.nodes.keep_table_clean()));
+        let h = task::spawn(periodic_task(KEEP_TABLE_CLEAN_CYCLE, move || {
+            server.nodes.keep_table_clean()
+        }));
         tasks.push(h);
     }
 
@@ -109,7 +111,10 @@ fn print_entity(e: &cjdns_ann::Entity) -> String {
     }
 }
 fn print_entities(it: Vec<&cjdns_ann::Entity>) -> String {
-    it.iter().map(|e| print_entity(&e)).collect::<Vec<String>>().join(", ")
+    it.iter()
+        .map(|e| print_entity(&e))
+        .collect::<Vec<String>>()
+        .join(", ")
 }
 
 struct Server {
@@ -156,7 +161,8 @@ const MINUTE: u64 = 60;
 const AGREED_TIMEOUT: Duration = Duration::from_secs(20 * MINUTE);
 const MAX_CLOCKSKEW: Duration = Duration::from_secs(10);
 const MAX_GLOBAL_CLOCKSKEW: Duration = Duration::from_secs(60 * 60 * 20);
-const GLOBAL_TIMEOUT: Duration = Duration::from_secs(MAX_GLOBAL_CLOCKSKEW.as_secs() + AGREED_TIMEOUT.as_secs());
+const GLOBAL_TIMEOUT: Duration =
+    Duration::from_secs(MAX_GLOBAL_CLOCKSKEW.as_secs() + AGREED_TIMEOUT.as_secs());
 
 impl Server {
     async fn handle_announce(&self, announce: AnnData, from_node: bool) {
@@ -166,13 +172,22 @@ impl Server {
         }
     }
 
-    async fn handle_announce_impl(&self, announce: Vec<u8>, from_node: bool, maybe_debug_noisy: Option<bool>) -> Result<(AnnHash, ReplyError), Error> {
+    async fn handle_announce_impl(
+        &self,
+        announce: Vec<u8>,
+        from_node: bool,
+        maybe_debug_noisy: Option<bool>,
+    ) -> Result<(AnnHash, ReplyError), Error> {
         let mut reply_error = ReplyError::None;
 
         let mut ann_opt = None;
         let mut self_node = None;
         let mut node = None;
-        let mut debug_noisy = if let Some(dn) = maybe_debug_noisy { dn } else { false };
+        let mut debug_noisy = if let Some(dn) = maybe_debug_noisy {
+            dn
+        } else {
+            false
+        };
 
         if let Ok(announcement_packet) = AnnouncementPacket::try_new(announce) {
             if announcement_packet.check().is_ok() {
@@ -188,7 +203,11 @@ impl Server {
                 let mut state = self.mut_state.lock();
                 state.current_node = Some(ann.node_ip.clone());
                 if maybe_debug_noisy.is_none() {
-                    debug_noisy = if let Some(dn) = &state.debug_node { dn.eq(&ann.node_ip) } else { false };
+                    debug_noisy = if let Some(dn) = &state.debug_node {
+                        dn.eq(&ann.node_ip)
+                    } else {
+                        false
+                    };
                 }
                 state.self_node.as_ref().map(|n| n.clone())
             };
@@ -199,10 +218,20 @@ impl Server {
                     ann.node_ip,
                     ann.header.timestamp,
                     ann.header.is_reset,
-                    ann.entities.iter().filter(|&a| matches!(&a, Entity::Peer { .. })).count(),
-                    ann.entities.iter().filter(|&a| matches!(&a, Entity::LinkState { .. })).count(),
+                    ann.entities
+                        .iter()
+                        .filter(|&a| matches!(&a, Entity::Peer { .. }))
+                        .count(),
+                    ann.entities
+                        .iter()
+                        .filter(|&a| matches!(&a, Entity::LinkState { .. }))
+                        .count(),
                     node.is_some(),
-                    if node.is_none() && !ann.header.is_reset { " ERR_UNKNOWN" } else { "" }
+                    if node.is_none() && !ann.header.is_reset {
+                        " ERR_UNKNOWN"
+                    } else {
+                        ""
+                    }
                 );
             }
         }
@@ -221,7 +250,10 @@ impl Server {
             let self_node = self_node.ok_or_else(|| anyhow!("no self_node"))?;
             if let Some(ann) = ann_opt.as_ref() {
                 if ann.header.snode_ip != self_node.ipv6 {
-                    warn!("announcement meant for other snode, we are {} got {}", self_node.ipv6, ann.header.snode_ip);
+                    warn!(
+                        "announcement meant for other snode, we are {} got {}",
+                        self_node.ipv6, ann.header.snode_ip
+                    );
                     reply_error = ReplyError::WrongSnode;
                     ann_opt = None;
                 }
@@ -229,7 +261,10 @@ impl Server {
             if let Some(ann) = ann_opt.as_ref() {
                 let clock_skew = time_diff(SystemTime::now(), mktime(ann.header.timestamp));
                 if clock_skew > MAX_CLOCKSKEW {
-                    warn!("unacceptably large clock skew {}h", clock_skew.as_secs_f64() / 60.0 / 60.0);
+                    warn!(
+                        "unacceptably large clock skew {}h",
+                        clock_skew.as_secs_f64() / 60.0 / 60.0
+                    );
                     reply_error = ReplyError::ExcessiveClockSkew;
                     ann_opt = None;
                 } else {
@@ -247,7 +282,10 @@ impl Server {
         }
 
         let scheme = {
-            if let Some(s) = ann_opt.as_ref().map(utils::encoding_scheme_from_announcement) {
+            if let Some(s) = ann_opt
+                .as_ref()
+                .map(utils::encoding_scheme_from_announcement)
+            {
                 s.cloned().map(Arc::new)
             } else if let Some(node) = node.as_ref() {
                 Some(node.encoding_scheme.clone())
@@ -289,8 +327,14 @@ impl Server {
             let node_timestamp = node.mut_state.read().timestamp;
             if node_timestamp > ann_timestamp {
                 //TODO suspicious - duplicate check? Ask CJ
-                warn!("old announcement [{}] most recent [{:?}]", ann.header.timestamp, node_timestamp);
-                return Ok((hash::node_announcement_hash(Some(node.clone()), debug_noisy), reply_error));
+                warn!(
+                    "old announcement [{}] most recent [{:?}]",
+                    ann.header.timestamp, node_timestamp
+                );
+                return Ok((
+                    hash::node_announcement_hash(Some(node.clone()), debug_noisy),
+                    reply_error,
+                ));
             }
         }
 
@@ -367,13 +411,23 @@ impl Server {
 
         let has_ann = {
             let node_mut = node.mut_state.read();
-            node_mut.announcements.iter().any(|a| *a == ann) || node_mut.reset_msg.as_ref().map(|reset_msg| *reset_msg == ann).unwrap_or(false)
+            node_mut.announcements.iter().any(|a| *a == ann)
+                || node_mut
+                    .reset_msg
+                    .as_ref()
+                    .map(|reset_msg| *reset_msg == ann)
+                    .unwrap_or(false)
         };
         if has_ann {
-            self.peers.add_ann(ann.hash.clone(), ann.binary.clone()).await;
+            self.peers
+                .add_ann(ann.hash.clone(), ann.binary.clone())
+                .await;
         }
 
-        return Ok((hash::node_announcement_hash(Some(node), debug_noisy), reply_error));
+        return Ok((
+            hash::node_announcement_hash(Some(node), debug_noisy),
+            reply_error,
+        ));
     }
 
     fn add_announcement(&self, node: Arc<Node>, ann: &Announcement, debug_noisy: bool) {
@@ -399,7 +453,12 @@ impl Server {
                     continue;
                 }
 
-                if entities_announced.iter().filter(|&je| utils::is_entity_replacement(e, je)).count() == 0 {
+                if entities_announced
+                    .iter()
+                    .filter(|&je| utils::is_entity_replacement(e, je))
+                    .count()
+                    == 0
+                {
                     safe = true;
                     justifications.push(e);
                     entities_announced.push(e.clone());
@@ -411,11 +470,18 @@ impl Server {
             if safe || *a == *ann {
                 if *a == *ann {
                     if debug_noisy {
-                        debug!("Keeping ann [{}] because it was announced just now", utils::ann_id(a));
+                        debug!(
+                            "Keeping ann [{}] because it was announced just now",
+                            utils::ann_id(a)
+                        );
                     }
                 } else {
                     if debug_noisy {
-                        debug!("Keeping ann [{}] for entities [{}]", utils::ann_id(a), print_entities(justifications));
+                        debug!(
+                            "Keeping ann [{}] for entities [{}]",
+                            utils::ann_id(a),
+                            print_entities(justifications)
+                        );
                     }
                 }
                 return true;
@@ -433,10 +499,18 @@ impl Server {
         });
 
         if debug_noisy {
-            debug!("Finally there are {} anns in the state", node_mut.announcements.len());
+            debug!(
+                "Finally there are {} anns in the state",
+                node_mut.announcements.len()
+            );
         }
         for a in drop_announce {
-            if node_mut.reset_msg.as_ref().map(|reset_msg| a != *reset_msg).unwrap_or(true) {
+            if node_mut
+                .reset_msg
+                .as_ref()
+                .map(|reset_msg| a != *reset_msg)
+                .unwrap_or(true)
+            {
                 self.peers.del_ann(&a.hash);
             }
         }
@@ -504,7 +578,9 @@ impl Server {
                     // If there's already a time entry for this slot, we don't care because new data wins.
                     //if link_state.contains_key(&ts) { continue; } // TODO: check if the numbers are the same?
 
-                    if let (Some(drop_slot), Some(lag_slot), Some(kb_recv_slot)) = (ls.drop_slots[i], ls.lag_slots[i], ls.kb_recv_slots[i]) {
+                    if let (Some(drop_slot), Some(lag_slot), Some(kb_recv_slot)) =
+                        (ls.drop_slots[i], ls.lag_slots[i], ls.kb_recv_slots[i])
+                    {
                         let new_state = LinkStateEntry {
                             drops: drop_slot,
                             lag: lag_slot,
@@ -516,7 +592,10 @@ impl Server {
                         assert!(delta_v >= 0.0);
                         link.mut_state.lock().value += delta_v;
                         if debug_noisy {
-                            debug!("LSU {} <- {}/{} : {:?}", ann.node_ip, ips_by_num[&ls.node_id], ls.node_id, new_state);
+                            debug!(
+                                "LSU {} <- {}/{} : {:?}",
+                                ann.node_ip, ips_by_num[&ls.node_id], ls.node_id, new_state
+                            );
                         }
                         link_state.insert(time, new_state);
                         time -= 1;
