@@ -169,7 +169,7 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
         self_node.version as i64
     } else {
         return Err(anyhow!("self node isn't set"));
-    };
+    } as i64;
 
     let res = match sq.as_str() {
         "gr" => {
