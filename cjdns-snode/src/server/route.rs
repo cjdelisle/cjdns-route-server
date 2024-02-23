@@ -48,7 +48,7 @@ pub enum RoutingError {
     // RouteNotFound(CJDNS_IP6, CJDNS_IP6),
     #[error("Empty path between {0} and {1}")]
     PathIsEmpty(CJDNS_IP6, CJDNS_IP6),
-    #[error("RoutingLabel::try_new(({0}) failed")]
+    #[error("RoutingLabel::try_new({0}) failed")]
     RoutingLabelTryNewFailed(u16),
     #[error("get_encoding_form failed: {0}")]
     GetEncodingFormFailed(String),
@@ -62,7 +62,11 @@ pub enum RoutingError {
     Splice(String),
 }
 
-pub(super) fn get_route(server: Arc<Server>, src: Option<Arc<Node>>, dst: Option<Arc<Node>>) -> Result<Route, RoutingError> {
+pub(super) fn get_route(
+    server: Arc<Server>,
+    src: Option<Arc<Node>>,
+    dst: Option<Arc<Node>>,
+) -> Result<Route, RoutingError> {
     if let (Some(src), Some(dst)) = (src, dst) {
         if src == dst {
             Ok(Route::identity())
@@ -78,7 +82,12 @@ pub(super) fn get_route(server: Arc<Server>, src: Option<Arc<Node>>, dst: Option
     }
 }
 
-fn get_route_impl(nodes: &Nodes, routing: &mut Routing, src: Arc<Node>, dst: Arc<Node>) -> Result<Route, RoutingError> {
+fn get_route_impl(
+    nodes: &Nodes,
+    routing: &mut Routing,
+    src: Arc<Node>,
+    dst: Arc<Node>,
+) -> Result<Route, RoutingError> {
     let now = Instant::now();
     const REBUILD_INTERVAL: Duration = Duration::from_secs(3);
     if routing.last_rebuild + REBUILD_INTERVAL < now || routing.dijkstra.is_none() {
@@ -95,7 +104,9 @@ fn get_route_impl(nodes: &Nodes, routing: &mut Routing, src: Arc<Node>, dst: Arc
 
     let route = compute_route(nodes, routing, src, dst);
 
-    routing.route_cache.insert(cache_key, route.as_ref().ok().cloned());
+    routing
+        .route_cache
+        .insert(cache_key, route.as_ref().ok().cloned());
 
     route
 }
@@ -141,7 +152,12 @@ fn build_node_graph(nodes: &Nodes) -> Dijkstra<CJDNS_IP6, f64> {
     d
 }
 
-fn compute_route(nodes: &Nodes, routing: &mut Routing, src: Arc<Node>, dst: Arc<Node>) -> Result<Route, RoutingError> {
+fn compute_route(
+    nodes: &Nodes,
+    routing: &mut Routing,
+    src: Arc<Node>,
+    dst: Arc<Node>,
+) -> Result<Route, RoutingError> {
     // We ask for the path in reverse because we build the graph in reverse.
     // Because nodes announce their own reachability instead of reachability of others.
     let path = {
@@ -150,7 +166,10 @@ fn compute_route(nodes: &Nodes, routing: &mut Routing, src: Arc<Node>, dst: Arc<
     };
 
     if path.is_empty() {
-        return Err(RoutingError::PathIsEmpty(src.ipv6.clone(), dst.ipv6.clone()));
+        return Err(RoutingError::PathIsEmpty(
+            src.ipv6.clone(),
+            dst.ipv6.clone(),
+        ));
     }
 
     let (label, hops) = compute_routing_label(nodes, &path)?;
@@ -160,7 +179,10 @@ fn compute_route(nodes: &Nodes, routing: &mut Routing, src: Arc<Node>, dst: Arc<
     Ok(route)
 }
 
-fn compute_routing_label(nodes: &Nodes, rev_path: &[CJDNS_IP6]) -> Result<(RoutingLabel<u64>, Vec<Hop>), RoutingError> {
+fn compute_routing_label(
+    nodes: &Nodes,
+    rev_path: &[CJDNS_IP6],
+) -> Result<(RoutingLabel<u64>, Vec<Hop>), RoutingError> {
     let (labels, hops) = {
         let mut last: Option<Arc<Node>> = None;
         let mut hops = Vec::new();
@@ -170,25 +192,57 @@ fn compute_routing_label(nodes: &Nodes, rev_path: &[CJDNS_IP6]) -> Result<(Routi
         for nip in rev_path.iter() {
             if let Some(node) = nodes.by_ip(nip) {
                 if let Some(last) = last {
-                    if let Some(greta_opinion_link) = node.inward_links_by_ip.lock().get(&last.ipv6).and_then(|ls| ls.get(0)) {
-                        if let Some(yury_opinion_link) = last.inward_links_by_ip.lock().get(&node.ipv6).and_then(|ls| ls.get(0)) {
+                    if let Some(greta_opinion_link) = node
+                        .inward_links_by_ip
+                        .lock()
+                        .get(&last.ipv6)
+                        .and_then(|ls| ls.get(0))
+                    {
+                        if let Some(yury_opinion_link) = last
+                            .inward_links_by_ip
+                            .lock()
+                            .get(&node.ipv6)
+                            .and_then(|ls| ls.get(0))
+                        {
                             // Yury sends message to Caleb via Greta
                             // last stand for yury
                             // node stands for greta
-                            let label_yg_32 = RoutingLabel::try_new(yury_opinion_link.peer_num as u32)
-                                .ok_or_else(|| RoutingError::RoutingLabelTryNewFailed(yury_opinion_link.peer_num))?;
-                            let mut label_yg = RoutingLabel::try_new(yury_opinion_link.peer_num as u64)
-                                .ok_or_else(|| RoutingError::RoutingLabelTryNewFailed(yury_opinion_link.peer_num))?;
-                            let label_gy = RoutingLabel::try_new(greta_opinion_link.peer_num as u64)
-                                .ok_or_else(|| RoutingError::RoutingLabelTryNewFailed(greta_opinion_link.peer_num))?;
+                            let label_yg_32 =
+                                RoutingLabel::try_new(yury_opinion_link.peer_num as u32)
+                                    .ok_or_else(|| {
+                                        RoutingError::RoutingLabelTryNewFailed(
+                                            yury_opinion_link.peer_num,
+                                        )
+                                    })?;
+                            let mut label_yg =
+                                RoutingLabel::try_new(yury_opinion_link.peer_num as u64)
+                                    .ok_or_else(|| {
+                                        RoutingError::RoutingLabelTryNewFailed(
+                                            yury_opinion_link.peer_num,
+                                        )
+                                    })?;
+                            let label_gy =
+                                RoutingLabel::try_new(greta_opinion_link.peer_num as u64)
+                                    .ok_or_else(|| {
+                                        RoutingError::RoutingLabelTryNewFailed(
+                                            greta_opinion_link.peer_num,
+                                        )
+                                    })?;
                             let (_, cur_form_num_yg) =
-                                get_encoding_form(label_yg, &node.encoding_scheme).map_err(|err| RoutingError::GetEncodingFormFailed(err.to_string()))?;
+                                get_encoding_form(label_yg, &node.encoding_scheme).map_err(
+                                    |err| RoutingError::GetEncodingFormFailed(err.to_string()),
+                                )?;
                             let (_, cur_form_num_gy) =
-                                get_encoding_form(label_gy, &last.encoding_scheme).map_err(|err| RoutingError::GetEncodingFormFailed(err.to_string()))?;
+                                get_encoding_form(label_gy, &last.encoding_scheme).map_err(
+                                    |err| RoutingError::GetEncodingFormFailed(err.to_string()),
+                                )?;
                             let label_yg_backup = label_yg_32;
                             if cur_form_num_yg < form_num {
                                 label_yg =
-                                    re_encode(label_yg, &last.encoding_scheme, Some(form_num)).map_err(|err| RoutingError::ReEncodeFailed(err.to_string()))?;
+                                    re_encode(label_yg, &last.encoding_scheme, Some(form_num))
+                                        .map_err(|err| {
+                                            RoutingError::ReEncodeFailed(err.to_string())
+                                        })?;
                             }
                             labels.push(label_yg);
                             let hop = Hop {
