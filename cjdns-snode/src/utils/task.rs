@@ -12,10 +12,7 @@ pub async fn periodic_task<T: FnMut()>(period: Duration, mut task: T) {
     }
 }
 
-pub async fn periodic_async_task<F: Future<Output = ()>, T: FnMut() -> F>(
-    period: Duration,
-    mut task: T,
-) {
+pub async fn periodic_async_task<F: Future<Output = ()>, T: FnMut() -> F>(period: Duration, mut task: T) {
     loop {
         time::sleep(period).await;
         task().await;

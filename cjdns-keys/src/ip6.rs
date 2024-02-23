@@ -4,8 +4,8 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 
 use regex::Regex;
-use sodiumoxide::crypto::hash::sha512::hash;
 use serde::{Serialize, Serializer};
+use sodiumoxide::crypto::hash::sha512::hash;
 
 use crate::{
     errors::{KeyCreationError, Result},

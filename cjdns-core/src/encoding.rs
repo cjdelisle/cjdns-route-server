@@ -307,9 +307,9 @@ mod encoding_serialization {
 mod encoding_scheme {
     //! Routing label encoding scheme.
 
+    use serde::Serialize;
     use std::collections::HashSet;
     use std::ops::Deref;
-    use serde::Serialize;
 
     use crate::encoding::errors::{FormValidationError, SchemeValidationError};
 
