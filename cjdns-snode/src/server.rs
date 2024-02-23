@@ -102,27 +102,17 @@ pub async fn main(config: Config) -> Result<()> {
     try_join_all(tasks).await.map(|_| ()).map_err(|e| e.into())
 }
 
-fn print_entity(e: &cjdns_ann::Entity) -> String {
-    match e {
-        cjdns_ann::Entity::Peer(p) => format!("{}/{}", p.ipv6, p.peer_num),
-        _ => format!("{:?}", e),
-    }
-}
-fn print_entities(it: Vec<&cjdns_ann::Entity>) -> String {
-    it.iter().map(|e| print_entity(&e)).collect::<Vec<String>>().join(", ")
-}
-
 struct Server {
     peers: Arc<Peers>,
     nodes: Nodes,
+    routing: Routing,
     mut_state: Mutex<ServerMut>,
 }
 
 struct ServerMut {
-    debug_node: Option<CJDNS_IP6>, //TODO Debugging feature - need to implement log filtering
+    debug_node: Option<CJDNS_IP6>,
     self_node: Option<Arc<Node>>,
     current_node: Option<CJDNS_IP6>,
-    routing: Routing,
 }
 
 #[derive(Debug)]
@@ -142,11 +132,11 @@ impl Server {
         Server {
             peers: peers.clone(),
             nodes: Nodes::new(peers),
+            routing: Routing::new(),
             mut_state: Mutex::new(ServerMut {
                 debug_node: None,
                 self_node: None,
                 current_node: None,
-                routing: Routing::new(),
             }),
         }
     }
@@ -172,7 +162,7 @@ impl Server {
         let mut ann_opt = None;
         let mut self_node = None;
         let mut node = None;
-        let mut debug_noisy = if let Some(dn) = maybe_debug_noisy { dn } else { false };
+        let mut debug_noisy = maybe_debug_noisy.unwrap_or(false);
 
         if let Ok(announcement_packet) = AnnouncementPacket::try_new(announce) {
             if announcement_packet.check().is_ok() {
@@ -188,7 +178,7 @@ impl Server {
                 let mut state = self.mut_state.lock();
                 state.current_node = Some(ann.node_ip.clone());
                 if maybe_debug_noisy.is_none() {
-                    debug_noisy = if let Some(dn) = &state.debug_node { dn.eq(&ann.node_ip) } else { false };
+                    debug_noisy = state.debug_node.as_ref().map(|dn| dn.eq(&ann.node_ip)).unwrap_or(false);
                 }
                 state.self_node.as_ref().map(|n| n.clone())
             };
@@ -287,8 +277,8 @@ impl Server {
 
         if let Some(node) = node.as_ref() {
             let node_timestamp = node.mut_state.read().timestamp;
+            //TODO suspicious - duplicate check? Ask CJ
             if node_timestamp > ann_timestamp {
-                //TODO suspicious - duplicate check? Ask CJ
                 warn!("old announcement [{}] most recent [{:?}]", ann.header.timestamp, node_timestamp);
                 return Ok((hash::node_announcement_hash(Some(node.clone()), debug_noisy), reply_error));
             }
@@ -415,7 +405,7 @@ impl Server {
                     }
                 } else {
                     if debug_noisy {
-                        debug!("Keeping ann [{}] for entities [{}]", utils::ann_id(a), print_entities(justifications));
+                        debug!("Keeping ann [{}] for entities [{}]", utils::ann_id(a), debug::print_entities(&justifications));
                     }
                 }
                 return true;
@@ -424,7 +414,7 @@ impl Server {
                     debug!(
                         "Dropping ann [{}] because all entities [{}] have been re-announced",
                         utils::ann_id(a),
-                        print_entities(justifications)
+                        debug::print_entities(&justifications)
                     );
                 }
                 drop_announce.push(a.clone());
@@ -540,6 +530,19 @@ impl std::fmt::Display for ReplyError {
             ReplyError::NoEncodingScheme => write!(f, "no_encodingScheme"),
             ReplyError::NoVersion => write!(f, "no_version"),
             ReplyError::UnknownNode => write!(f, "unknown_node"),
+        }
+    }
+}
+
+mod debug {
+    pub fn print_entities(list: &[&cjdns_ann::Entity]) -> String {
+        list.iter().map(|e| print_entity(&e)).collect::<Vec<String>>().join(", ")
+    }
+
+    fn print_entity(e: &cjdns_ann::Entity) -> String {
+        match e {
+            cjdns_ann::Entity::Peer(p) => format!("{}/{}", p.ipv6, p.peer_num),
+            _ => format!("{:?}", e),
         }
     }
 }
