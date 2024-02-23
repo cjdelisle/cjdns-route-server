@@ -7,8 +7,8 @@ use std::convert::TryFrom;
 use std::fmt;
 
 use regex::Regex;
-use thiserror::Error;
 use serde::{Serialize, Serializer};
+use thiserror::Error;
 
 use super::RoutingLabel;
 
@@ -30,12 +30,12 @@ macro_rules! mk_display_serialize {
         impl Serialize for RoutingLabel<$t> {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
-                S: Serializer
+                S: Serializer,
             {
                 serializer.serialize_str(&self.to_string()[..])
             }
         }
-    }
+    };
 }
 mk_display_serialize!(u32);
 mk_display_serialize!(u64);
