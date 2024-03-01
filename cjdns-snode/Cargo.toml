@@ -9,33 +9,34 @@ license = "GPL-3.0-or-later"
 description = "cjdns supernode"
 
 [dependencies]
-anyhow = "1.0"
-clap = { version = "3.0.0-beta.1", default-features = false, features = [ "std", "derive" ] }
-env_logger = "0.7"
-futures = "0.3"
-hex = "0.4"
-http = "0.2"
-lazy_static = "1.4"
-log = "0.4"
-parking_lot = "0.11"
-regex = "1.3"
-rmpv = "0.4" # msgpack encoding
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "1.0"
-tokio = { version = "0.2", features = ["fs", "net", "macros", "time", "sync"] }
-tokio-tungstenite = "0.11"
-warp = "0.2"
+anyhow = { workspace = true }
+clap = { workspace = true }
+env_logger = { workspace = true }
+futures = { workspace = true }
+http = { workspace = true }
+lazy_static = { workspace = true }
+log = { workspace = true }
+parking_lot = { workspace = true }
+regex = { workspace = true }
+rmpv = { workspace = true } # msgpack encoding
+hex = { workspace = true }
+serde = { workspace = true, features = ["derive", "rc"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+warp = { workspace = true }
+sodiumoxide = { workspace = true }
+strum = { workspace = true }
 
-cjdns-core = { path = "../cjdns-core" }
-cjdns-keys = { path = "../cjdns-keys" }
-cjdns-ann = { path = "../cjdns-ann" }
-cjdns-hdr = { path = "../cjdns-hdr" }
-cjdns-admin = { path = "../cjdns-admin" }
-cjdns-sniff = { path = "../cjdns-sniff" }
-cjdns-bytes = { path = "../cjdns-bytes" }
-cjdns-bencode = { path = "../cjdns-bencode" }
-cjdns-crypto = { path = "../cjdns-crypto" }
+cjdns-admin = { workspace = true }
+cjdns-ann = { workspace = true }
+cjdns-bencode = { workspace = true }
+cjdns-bytes = { workspace = true }
+cjdns-core = { workspace = true }
+cjdns-hdr = { workspace = true }
+cjdns-keys = { workspace = true }
+cjdns-sniff = { workspace = true }
 
 [dev-dependencies]
-chrono = "0.4"
+chrono = { workspace = true }

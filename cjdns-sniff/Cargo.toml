@@ -9,20 +9,18 @@ license = "GPL-3.0-or-later"
 description = "Tools for dumping and injecting cjdns traffic"
 
 [dependencies]
-anyhow = "1.0"
-clap = { version = "3.0.0-beta.1", default-features = false, features = [ "std", "derive" ] }
-env_logger = "0.7"
-hex = "0.4"
-log = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "1.0"
+anyhow = { workspace = true }
+hex = { workspace = true }
+log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 
-tokio = { version = "0.2", features = ["fs", "macros", "net", "udp", "time", "signal"] }
+tokio = { workspace = true }
 
-cjdns-admin = { path = "../cjdns-admin" }
-cjdns-bencode = { path = "../cjdns-bencode" }
-cjdns-bytes = { path = "../cjdns-bytes" }
-cjdns-keys = { path = "../cjdns-keys" }
-cjdns-ctrl = { path = "../cjdns-ctrl" }
-cjdns-hdr = { path = "../cjdns-hdr" }
+cjdns-admin = { workspace = true }
+cjdns-bencode = { workspace = true }
+cjdns-bytes = { workspace = true }
+cjdns-ctrl = { workspace = true }
+cjdns-keys = { workspace = true }
+cjdns-hdr = { workspace = true }

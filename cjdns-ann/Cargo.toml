@@ -9,10 +9,10 @@ license = "GPL-3.0-or-later"
 description = "Library for parsing cjdns announcement messages"
 
 [dependencies]
-hex = "0.4"
-thiserror = "1.0"
-
-cjdns-core = { path = "../cjdns-core" }
-cjdns-keys = { path = "../cjdns-keys" }
-cjdns-bytes = { path = "../cjdns-bytes" }
-cjdns-crypto = { path = "../cjdns-crypto" }
+hex = { workspace = true }
+sodiumoxide = { workspace = true }
+libsodium-sys = { workspace = true }
+thiserror = { workspace = true }
+cjdns-bytes = { workspace = true }
+cjdns-core = { workspace = true }
+cjdns-keys = { workspace = true }

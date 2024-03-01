@@ -55,7 +55,7 @@ pub(super) fn is_entity_replacement(old_e: &Entity, new_e: &Entity) -> bool {
     if old_type != new_type {
         return false;
     }
-    if matches!(old_e, Entity::EncodingScheme{..}) || matches!(old_e, Entity::NodeProtocolVersion(_)) {
+    if matches!(old_e, Entity::EncodingScheme { .. }) || matches!(old_e, Entity::NodeProtocolVersion(_)) {
         return true;
     }
     if let (Entity::Peer(old_peer), Entity::Peer(new_peer)) = (old_e, new_e) {

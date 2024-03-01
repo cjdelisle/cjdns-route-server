@@ -1,8 +1,9 @@
 //! This module exports logic on deserialized announcement message
 
+use sodiumoxide::crypto::hash::sha512;
+
 use cjdns_core::{EncodingScheme, RoutingLabel};
-use cjdns_crypto::hash::sha512;
-use cjdns_keys::{CJDNS_IP6, CJDNSPublicKey};
+use cjdns_keys::{CJDNSPublicKey, CJDNS_IP6};
 
 /// Deserialized cjdns route announcement message.
 ///

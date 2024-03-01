@@ -101,7 +101,7 @@ impl Peers {
             } else {
                 Duration::from_secs(10)
             };
-            time::delay_for(delay).await;
+            time::sleep(delay).await;
         }
     }
 
@@ -259,8 +259,8 @@ impl Peers {
                     let anns = self.anns.lock();
                     anns.get(&hash).unwrap_or_default()
                 };
-                //TODO Ask CJ whether it is possible to have empty announce data and under what circumstances
                 peer.send_msg(Message(id, MessageData::DATA(ann))).await?;
+                //TODO Ask CJ whether it is possible to have empty announce data and under what circumstances
             }
 
             PING => {

@@ -15,6 +15,17 @@ pub trait WebSock {
     fn ws_split(self) -> (Box<WsWrite>, Box<WsRead>);
 }
 
+impl WebSock for tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+    fn ws_split(self) -> (Box<WsWrite>, Box<WsRead>) {
+        let (ws_write, ws_read) = self.split();
+        let ws_write = ws_write
+            .with(|bytes| ready(Ok(tungstenite::Message::Binary(bytes))))
+            .sink_map_err(|err: tungstenite::Error| anyhow!(err));
+        let ws_read = ws_read.map_ok(|ws_message| ws_message.into_data()).map_err(|err| anyhow!(err));
+        (Box::new(ws_write), Box::new(ws_read))
+    }
+}
+
 impl WebSock for WebSocketStream<TcpStream> {
     fn ws_split(self) -> (Box<WsWrite>, Box<WsRead>) {
         let (ws_write, ws_read) = self.split();

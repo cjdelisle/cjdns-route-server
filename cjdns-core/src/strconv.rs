@@ -3,48 +3,43 @@
 //! RoutingLabel supports default formatting `format!("{}", routing_label)` (in hex form)
 //! and binary formatting `format!("{:b}", routing_label)`.
 
-#![deny(missing_docs)]
-
 use std::convert::TryFrom;
 use std::fmt;
 
 use regex::Regex;
+use serde::{Serialize, Serializer};
 use thiserror::Error;
 
 use super::RoutingLabel;
 
-/// Label string parsing errors.
 #[derive(Error, Copy, Clone, PartialEq, Eq, Debug)]
 pub enum LabelError {
-    /// Routing label string form is not valid and can not be parsed.
     #[error("Malformed routing label string")]
     MalformedRoutingLabelStringValue,
-
-    /// Routing label is all-zeroes.
-    /// This is not a valid label anyway,
-    /// so it should be better expressed
-    /// as `None` in `Option<RoutingLabel>`.
     #[error("Routing label is all-zeroes")]
     ZeroRoutingLabel,
 }
 
-impl fmt::Display for RoutingLabel<u32> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <RoutingLabel<u32> as fmt::LowerHex>::fmt(self, f)
-    }
+macro_rules! mk_display_serialize {
+    ($t:ident) => {
+        impl fmt::Display for RoutingLabel<$t> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                <RoutingLabel<$t> as fmt::LowerHex>::fmt(self, f)
+            }
+        }
+        impl Serialize for RoutingLabel<$t> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                serializer.serialize_str(&self.to_string()[..])
+            }
+        }
+    };
 }
-
-impl fmt::Display for RoutingLabel<u64> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <RoutingLabel<u64> as fmt::LowerHex>::fmt(self, f)
-    }
-}
-
-impl fmt::Display for RoutingLabel<u128> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <RoutingLabel<u128> as fmt::LowerHex>::fmt(self, f)
-    }
-}
+mk_display_serialize!(u32);
+mk_display_serialize!(u64);
+mk_display_serialize!(u128);
 
 impl fmt::LowerHex for RoutingLabel<u32> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

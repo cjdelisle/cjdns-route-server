@@ -10,5 +10,5 @@ description = "The 1s complement checksum used by TCP, UDP and ICMP"
 
 [dependencies]
 
-[dev-dependencies.hex]
-version = "0.4"
+[dev-dependencies]
+hex = { workspace = true }

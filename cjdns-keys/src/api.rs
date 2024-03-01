@@ -1,17 +1,20 @@
 //! CJDNS API. Used for easy, fast and safe creation of random key pair.
 
 use std::convert::TryFrom;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Once,
+};
 
-use cjdns_crypto::random::DefaultRandom;
+use sodiumoxide::init;
 
-use crate::{CJDNS_IP6, CJDNSPrivateKey, CJDNSPublicKey};
+use crate::{CJDNSPrivateKey, CJDNSPublicKey, CJDNS_IP6};
 
 /// Type that encapsulates some crate functions making it safer for its users to work with randomly created keys.
 ///
 /// The struct initialization ensures thread-safety in runtime. If you don't need to work with randomly created keys, you can use appropriate key types directly.
-pub struct CJDNSKeysApi {
-    random: DefaultRandom
-}
+#[derive(Debug, Clone, Copy)]
+pub struct CJDNSKeysApi;
 
 /// Convenience type for managing all CJDNS key types in one variable.
 ///
@@ -31,11 +34,9 @@ pub struct CJDNSKeys {
 }
 
 impl CJDNSKeysApi {
-    /// Initialization function, which guarantees on success that it will be safe to call methods
-    /// which use "randomize" logic (i.e. `key_pair`, `gen_private_key`).
+    /// Initialization function, which guarantees on success that it will be safe to call methods, which use "randomize" logic (i.e. `key_pair`, `gen_private_key`).
     ///
-    /// If you want to work with randomly created cjdns keys,
-    /// it's recommended to first initialize `CJDNSKeysApi`.
+    /// If you want to work with randomly created cjdns keys, it's recommended to first initialize `CJDNSKeysApi`.
     /// For example:
     /// ```rust
     /// use cjdns_keys::CJDNSKeysApi;
@@ -45,11 +46,25 @@ impl CJDNSKeysApi {
     /// let keys = keys_api.key_pair();
     /// ```
     pub fn new() -> std::result::Result<Self, ()> {
-        Ok(
-            CJDNSKeysApi {
-                random: DefaultRandom::new()?
-            }
-        )
+        if Self::init_sodiumoxide() {
+            return Ok(Self);
+        }
+        Err(())
+    }
+
+    /// for thread safety: https://docs.rs/sodiumoxide/0.2.5/sodiumoxide/randombytes/fn.randombytes.html
+    fn init_sodiumoxide() -> bool {
+        static INIT_SODIUMOXIDE: Once = Once::new();
+        static INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+        INIT_SODIUMOXIDE.call_once(|| {
+            // if any thread reached `store`, which will be executed thread safely and only once, it does not need any strict order for this op.
+            INITIALIZED.store(init().is_ok(), Ordering::Relaxed);
+        });
+
+        // `Ordering::Relaxed` is used because there can't be any `stores` after it.
+        // Explanation: `store` happens in `Once` closure, so no `store` ops will be executed after it.
+        INITIALIZED.load(Ordering::Relaxed)
     }
 
     /// Convenience method that generates safely valid key "pair". Returns `CJDNSKeys` struct with corresponding keys as its fields.
@@ -71,7 +86,7 @@ impl CJDNSKeysApi {
     ///
     /// Considered safe, because the method takes immutable reference of the successfully initialized api type instance.
     pub fn gen_private_key(&self) -> CJDNSPrivateKey {
-        CJDNSPrivateKey::new_random(&self.random)
+        CJDNSPrivateKey::new()
     }
 }
 

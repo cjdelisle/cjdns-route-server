@@ -10,4 +10,4 @@ license = "GPL-3.0-or-later"
 description = "Parsing & serializing tools"
 
 [dependencies]
-thiserror = "1.0"
+thiserror = { workspace = true }

@@ -7,14 +7,14 @@ use tokio::time;
 
 pub async fn periodic_task<T: FnMut()>(period: Duration, mut task: T) {
     loop {
-        time::delay_for(period).await;
+        time::sleep(period).await;
         task();
     }
 }
 
 pub async fn periodic_async_task<F: Future<Output = ()>, T: FnMut() -> F>(period: Duration, mut task: T) {
     loop {
-        time::delay_for(period).await;
+        time::sleep(period).await;
         task().await;
     }
 }

@@ -20,6 +20,8 @@ extern crate lazy_static;
 extern crate log;
 
 use anyhow::Result;
+use std::io::Write;
+use std::time::SystemTime;
 
 /// Program entry point.
 #[tokio::main]
@@ -29,10 +31,26 @@ async fn main() {
     }
 }
 
+fn now_sec() -> u64 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+}
+
 /// Main function.
 async fn run() -> Result<()> {
     // Initialize logger
-    logger::init();
+    env_logger::Builder::from_default_env()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} {} {}:{} {}",
+                now_sec(),
+                record.level(),
+                record.file().unwrap_or("?"),
+                record.line().unwrap_or(0),
+                record.args()
+            )
+        })
+        .init();
 
     // Parse command line arguments
     let opts = args::parse();
@@ -46,41 +64,11 @@ async fn run() -> Result<()> {
     server::main(config).await
 }
 
-/// Logger initialization
-mod logger {
-    use std::io::Write;
-    use std::time::SystemTime;
-
-    fn now_sec() -> u64 {
-        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
-    }
-
-    fn short_file(file: &str) -> &str {
-        file.rsplit('/').next().unwrap_or(file)
-    }
-
-    pub fn init() {
-        env_logger::Builder::from_default_env()
-            .format(|buf, record| {
-                writeln!(
-                    buf,
-                    "{} {} {}:{} {}",
-                    now_sec(),
-                    record.level(),
-                    short_file(record.file().unwrap_or("?")),
-                    record.line().unwrap_or(0),
-                    record.args()
-                )
-            })
-            .init();
-    }
-}
-
 /// Command-line arguments parsing.
 mod args {
     use std::path::PathBuf;
 
-    use clap::Clap;
+    use clap::Parser;
 
     /// Parse command line.
     pub(super) fn parse() -> Opts {
@@ -88,11 +76,11 @@ mod args {
     }
 
     /// CJDNS supernode.
-    #[derive(Clap)]
-    #[clap(version = "0.1.0", author = "The CJDNS development team")]
+    #[derive(Parser)]
+    #[command(version = "0.1.0", author = "The CJDNS development team")]
     pub struct Opts {
         /// Config file path
-        #[clap(long = "config", default_value = "./config.json")]
+        #[arg(long = "config", default_value = "./config.json")]
         pub config_file: PathBuf,
     }
 }

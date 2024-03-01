@@ -10,6 +10,7 @@ use tokio::{select, time};
 use cjdns_admin::msgs::{Empty, GenericResponsePayload};
 use cjdns_admin::{ArgValues, Connection, ReturnValue};
 use cjdns_bencode::BValue;
+use cjdns_core::RoutingLabel;
 use cjdns_hdr::RouteHeader;
 use cjdns_keys::{CJDNSPublicKey, CJDNS_IP6};
 use cjdns_sniff::{Content, ContentType, Message, ReceiveError, Sniffer};
@@ -82,7 +83,7 @@ async fn check_connection_alive(mut cjdns: Connection) -> Result<(), Error> {
     const CHECK_CONNECTION_DELAY: Duration = Duration::from_secs(5);
 
     loop {
-        time::delay_for(CHECK_CONNECTION_DELAY).await;
+        time::sleep(CHECK_CONNECTION_DELAY).await;
 
         if count_handlers(&mut cjdns).await? == 0 {
             return Err(anyhow!("Call to UpperDistributor_listHandlers returned 0 handlers - connection aborted?"));
@@ -102,22 +103,20 @@ async fn count_handlers(cjdns: &mut Connection) -> Result<usize, Error> {
 async fn on_subnode_message(server: Arc<Server>, msg: Message) -> Result<Option<Message>, Error> {
     let (route_header, content_type, content) = (msg.route_header, msg.content_type, msg.content);
     if let Content::Benc(content_benc) = content {
-        let res = on_subnode_message_impl(server, route_header.clone(), content_benc)
-            .await?
-            .map(|(res_benc, ver)| {
-                let route_header = {
-                    let mut h = route_header;
-                    h.switch_header.label_shift = 0;
-                    h.version = ver;
-                    h
-                };
-                Message {
-                    route_header,
-                    content_type,
-                    content: Content::Benc(res_benc),
-                    raw_bytes: None,
-                }
-            });
+        let mut res_route_header = {
+            let mut h = route_header.clone();
+            h.switch_header.label_shift = 0;
+            h
+        };
+        let res = on_subnode_message_impl(server, route_header, content_benc).await?.map(|(res_benc, ver)| {
+            res_route_header.version = ver;
+            Message {
+                route_header: res_route_header,
+                content_type,
+                content: Content::Benc(res_benc),
+                raw_bytes: None,
+            }
+        });
         Ok(res)
     } else {
         Ok(None) // Ignore unknown messages
@@ -170,7 +169,7 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
         self_node.version as i64
     } else {
         return Err(anyhow!("self node isn't set"));
-    };
+    } as i64;
 
     let res = match sq.as_str() {
         "gr" => {
@@ -208,12 +207,73 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
 
             let route = get_route(server.clone(), src.clone(), tar.clone());
 
+            // BUG: Sometimes the RS is dumb enough to try to propose a non-working route to a PEER.
+            // If the RS is proposing a route OTHER than direct along the peering link, we should just
+            // send the peering path instead.
+            let mut route_label = None;
+            let mut num_routes = 0;
+            let mut confirmed = false;
+            if let Some(node) = &tar {
+                let ilbi = node.inward_links_by_ip.lock();
+                if let Some(links) = ilbi.get(&src_ip) {
+                    if let Some(newest) = links.iter().reduce(|rl, nl| if rl.create_time > nl.create_time { rl } else { nl }) {
+                        route_label = RoutingLabel::try_new(newest.label.bits() as u64);
+                        num_routes = links.len();
+                    }
+                }
+            }
+            if let (Some(node), Some(route_label)) = (&src, route_label) {
+                let ilbi = node.inward_links_by_ip.lock();
+                if let Some(links) = ilbi.get(&tar_ip) {
+                    for l in links {
+                        if l.peer_num as u64 == route_label.bits() {
+                            confirmed = true;
+                        }
+                    }
+                }
+            }
+
             let res = if let (Ok(route), Some(tar)) = (route, tar) {
                 res
                     // List of nodes (one entry - the destination).
                     // Each node represented as its public key + routing label.
                     .add_dict_entry("n", |b| {
-                        let label_bits = route.label.bits().to_be_bytes();
+                        let label_bits = if let Some(route_label) = route_label {
+                            let addr = route_header.ip6.map(|x| x.to_string()).unwrap_or_default();
+                            let src_ip_s = src_ip.to_string();
+                            if debug_noisy {
+                                debug!(
+                                    "{} REQ GR {}=>{}, peering link {} {}{} {}",
+                                    addr,
+                                    if src_ip_s == addr { "self".to_owned() } else { src_ip_s },
+                                    tar_ip,
+                                    route_label.to_string(),
+                                    if route_label == route.label {
+                                        "matches computed".to_string()
+                                    } else {
+                                        format!("differs from computed {}", route.label.to_string())
+                                    },
+                                    if num_routes > 1 {
+                                        format!(" ({} choices)", num_routes)
+                                    } else {
+                                        "".to_owned()
+                                    },
+                                    if confirmed { "CONFIRMED" } else { "UNCONFIRMED" },
+                                );
+                            }
+                            if route_label == route.label && confirmed {
+                                route.label
+                            } else if confirmed {
+                                // differing link, use the peering
+                                route_label
+                            } else {
+                                route.label
+                            }
+                        } else {
+                            route.label
+                        }
+                        .bits()
+                        .to_be_bytes();
                         let mut buf = Vec::with_capacity(CJDNSPublicKey::SIZE + route.label.size());
                         buf.extend_from_slice(&tar.key);
                         buf.extend_from_slice(&label_bits);

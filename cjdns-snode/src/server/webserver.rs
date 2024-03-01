@@ -9,7 +9,7 @@ use warp::{Filter, Rejection, Reply};
 use crate::server::Server;
 
 pub(super) async fn test_srv_task(server: Arc<Server>) {
-    let routes = api(server);
+    let routes = api(server).recover(handlers::rejection);
     warp::serve(routes).run(([127, 0, 0, 1], 3333)).await;
 }
 
@@ -115,13 +115,78 @@ mod handlers {
 
     use self::warp_pretty_print_json_reply::reply_json;
 
-    #[derive(Error, Debug)]
+    #[derive(Error, Debug, strum::EnumDiscriminants)]
     enum WebServerError {
         #[error("Bad IPv6 address '{0}': {1}")]
         BadIP6Address(String, String),
+        #[error(transparent)]
+        RoutingError(#[from] crate::server::route::RoutingError),
+    }
+
+    impl From<WebServerErrorDiscriminants> for StatusCode {
+        fn from(from: WebServerErrorDiscriminants) -> Self {
+            use WebServerErrorDiscriminants::*;
+            match from {
+                BadIP6Address => Self::BAD_REQUEST,
+                RoutingError => Self::INTERNAL_SERVER_ERROR,
+            }
+        }
+    }
+
+    impl From<&WebServerError> for StatusCode {
+        fn from(from: &WebServerError) -> Self {
+            WebServerErrorDiscriminants::from(from).into()
+        }
     }
 
     impl Reject for WebServerError {}
+
+    // This function receives a `Rejection` and tries to return a custom
+    // value, otherwise simply passes the rejection along.
+    pub async fn rejection(err: Rejection) -> Result<impl Reply, Infallible> {
+        let code;
+        let message: String;
+        if err.is_not_found() {
+            code = StatusCode::NOT_FOUND;
+            message = "NOT_FOUND".to_owned();
+        } else if let Some(err) = err.find::<WebServerError>() {
+            code = err.into();
+            message = err.to_string();
+        } else if let Some(e) = err.find::<warp::filters::body::BodyDeserializeError>() {
+            code = StatusCode::BAD_REQUEST;
+            message = format!("{}", e);
+        } else if let Some(_err) = err.find::<warp::reject::UnsupportedMediaType>() {
+            code = StatusCode::BAD_REQUEST;
+            message = "expected Content-type: application/json".to_owned();
+        } else if let Some(_err) = err.find::<warp::reject::PayloadTooLarge>() {
+            code = StatusCode::BAD_REQUEST;
+            message = "request body is TOO LARGE".to_owned();
+        } else if let Some(err) = err.find::<warp::reject::MethodNotAllowed>() {
+            code = StatusCode::METHOD_NOT_ALLOWED;
+            message = format!("{:?}", err);
+        } else {
+            code = StatusCode::INTERNAL_SERVER_ERROR;
+            message = format!("{:?}", err);
+        }
+
+        let json = {
+            let reason = code.canonical_reason();
+            let code = code.as_u16();
+            match &reason {
+                None => error!("{}: {}", code, message),
+                Some(reason) => error!("{}: {}: {}", code, reason, message),
+            }
+            /// An API error serializable to JSON.
+            #[derive(serde::Serialize)]
+            #[serde(rename_all = "camelCase")]
+            pub enum ErrReply {
+                Err { code: u16, reason: Option<&'static str>, message: String },
+            }
+            warp::reply::json(&ErrReply::Err { code, reason, message })
+        };
+
+        Ok(warp::reply::with_status(json, code))
+    }
 
     pub(super) async fn handle_info(server: Arc<Server>) -> Result<impl Reply, Infallible> {
         let peers_info = server.peers.get_info();
@@ -168,10 +233,9 @@ mod handlers {
         if tar.is_none() {
             return Ok("tar not found".to_string());
         }
-        match get_route(server.clone(), src, tar) {
-            Ok(r) => Ok(r.label.to_string()),
-            Err(e) => Ok(format!("{:?}", e)),
-        }
+        get_route(server.clone(), src, tar)
+            .map(|r| serde_json::to_string_pretty(&r).unwrap())
+            .map_err(|err| warp::reject::custom(WebServerError::RoutingError(err)))
     }
 
     pub(super) async fn handle_ni_with_ip(ip6: String, server: Arc<Server>) -> Result<impl Reply, Infallible> {

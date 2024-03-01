@@ -9,5 +9,6 @@ license = "GPL-3.0-or-later"
 description = "cjdns Bencode library"
 
 [dependencies]
-bendy = { git = "https://github.com/CJDNS-Development-Team/bendy-cjdns", tag = "v0.3.2-cjdns", features = ["std", "serde"] }
-hex = "0.4"
+bendy = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true }
