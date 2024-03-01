@@ -272,7 +272,8 @@ fn compute_routing_label(
         (labels, hops)
     };
 
-    let spliced = splice(&labels).map_err(|err| RoutingError::Splice(err.to_string()))?;
+    let spliced = splice(&labels)
+        .map_err(|err| RoutingError::Splice(format!("{err}, label.len: {}", labels.len())))?;
 
     Ok((spliced, hops))
 }
