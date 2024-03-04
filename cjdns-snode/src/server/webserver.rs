@@ -226,7 +226,6 @@ mod handlers {
         let tar_ip = CJDNS_IP6::try_from(tar.as_str()).map_err(|e| warp::reject::custom(WebServerError::BadIP6Address(tar, e.to_string())))?;
         let src = server.nodes.by_ip(&src_ip);
         let tar = server.nodes.by_ip(&tar_ip);
-        warn!("http getRoute req {} {}", src_ip, tar_ip);
         if src.is_none() {
             return Ok("src not found".to_string());
         }
@@ -347,6 +346,13 @@ mod handlers {
                                 node.key.to_string(),
                                 other_node.key.to_string(),
                                 json_label(Some(link.label)),
+                                json!({"peer_num":
+                                    if link.peer_num == 0 {
+                                        link.peer_num.to_string()
+                                    } else {
+                                        format!("{:#x}", link.peer_num)
+                                    }
+                                })
                             ]);
                             out_links.push(walk_link)
                         }

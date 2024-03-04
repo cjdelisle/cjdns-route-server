@@ -61,7 +61,7 @@ async fn run() -> Result<()> {
     debug!("{:?}", config);
 
     // Run the application
-    server::main(config).await
+    server::main(config, opts).await
 }
 
 /// Command-line arguments parsing.
@@ -82,6 +82,10 @@ mod args {
         /// Config file path
         #[arg(long = "config", default_value = "./config.json")]
         pub config_file: PathBuf,
+
+        /// Use old implementation for `fn compute_routing_label`
+        #[arg(long = "old", short = 'o')]
+        pub use_old_compute_routing_label_impl: bool,
     }
 }
 

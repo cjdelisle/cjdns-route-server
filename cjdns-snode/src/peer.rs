@@ -21,7 +21,6 @@ use crate::utils::seq::Seq;
 
 pub(crate) use self::ann_list::AnnData;
 use self::ann_list::AnnList;
-pub use self::info::{PeerInfo, PeersInfo};
 pub use self::peer::Peer;
 use self::peer::PeerType;
 use self::peer_list::PeerList;
