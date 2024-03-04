@@ -385,6 +385,13 @@ mod handlers {
                                 node.key.to_string(),
                                 other_node.key.to_string(),
                                 json_label(Some(link.label)),
+                                json!({"peer_num":
+                                    if link.peer_num == 0 {
+                                        link.peer_num.to_string()
+                                    } else {
+                                        format!("{:#x}", link.peer_num)
+                                    }
+                                })
                             ]);
                             out_links.push(walk_link)
                         }
