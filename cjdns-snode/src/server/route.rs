@@ -73,7 +73,13 @@ pub(super) fn get_route(
         } else {
             let nodes = &server.nodes;
             let routing = &mut server.mut_state.lock().routing;
-            get_route_impl(nodes, routing, src, dst)
+            get_route_impl(
+                nodes,
+                routing,
+                src,
+                dst,
+                server.use_old_compute_routing_label_impl,
+            )
             // let error = RoutingError::RouteNotFound(src.ipv6.clone(), dst.ipv6.clone());
             // get_route_impl(nodes, routing, src, dst).ok_or(error)
         }
@@ -87,6 +93,7 @@ fn get_route_impl(
     routing: &mut Routing,
     src: Arc<Node>,
     dst: Arc<Node>,
+    use_old_impl: bool,
 ) -> Result<Route, RoutingError> {
     let now = Instant::now();
     const REBUILD_INTERVAL: Duration = Duration::from_secs(3);
@@ -102,7 +109,7 @@ fn get_route_impl(
         return Ok(cached_entry);
     }
 
-    let route = compute_route(nodes, routing, src, dst);
+    let route = compute_route(nodes, routing, src, dst, use_old_impl);
 
     routing
         .route_cache
@@ -157,6 +164,7 @@ fn compute_route(
     routing: &mut Routing,
     src: Arc<Node>,
     dst: Arc<Node>,
+    use_old_impl: bool,
 ) -> Result<Route, RoutingError> {
     // We ask for the path in reverse because we build the graph in reverse.
     // Because nodes announce their own reachability instead of reachability of others.
@@ -172,7 +180,7 @@ fn compute_route(
         ));
     }
 
-    let (label, hops) = compute_routing_label(nodes, &path)?;
+    let (label, hops) = compute_routing_label(nodes, &path, use_old_impl)?;
 
     let route = Route { label, hops, path };
 
@@ -182,6 +190,7 @@ fn compute_route(
 fn compute_routing_label(
     nodes: &Nodes,
     rev_path: &[CJDNS_IP6],
+    use_old_impl: bool,
 ) -> Result<(RoutingLabel<u64>, Vec<Hop>), RoutingError> {
     let (labels, hops) = {
         let mut last: Option<Arc<Node>> = None;
@@ -192,72 +201,108 @@ fn compute_routing_label(
         for nip in rev_path.iter() {
             if let Some(node) = nodes.by_ip(nip) {
                 if let Some(last) = last {
-                    if let Some(greta_opinion_link) = node
-                        .inward_links_by_ip
-                        .lock()
-                        .get(&last.ipv6)
-                        .and_then(|ls| ls.get(0))
-                    {
-                        if let Some(yury_opinion_link) = last
+                    if use_old_impl {
+                        if let Some(Some(link)) = node
                             .inward_links_by_ip
                             .lock()
-                            .get(&node.ipv6)
-                            .and_then(|ls| ls.get(0))
+                            .get(&last.ipv6)
+                            .map(|ls| ls.get(0))
                         {
-                            // Yury sends message to Caleb via Greta
-                            // last stand for yury
-                            // node stands for greta
-                            let label_yg_32 =
-                                RoutingLabel::try_new(yury_opinion_link.peer_num as u32)
-                                    .ok_or_else(|| {
-                                        RoutingError::RoutingLabelTryNewFailed(
-                                            yury_opinion_link.peer_num,
-                                        )
-                                    })?;
-                            let mut label_yg =
-                                RoutingLabel::try_new(yury_opinion_link.peer_num as u64)
-                                    .ok_or_else(|| {
-                                        RoutingError::RoutingLabelTryNewFailed(
-                                            yury_opinion_link.peer_num,
-                                        )
-                                    })?;
-                            let label_gy =
-                                RoutingLabel::try_new(greta_opinion_link.peer_num as u64)
-                                    .ok_or_else(|| {
-                                        RoutingError::RoutingLabelTryNewFailed(
-                                            greta_opinion_link.peer_num,
-                                        )
-                                    })?;
-                            let (_, cur_form_num_yg) =
-                                get_encoding_form(label_yg, &node.encoding_scheme).map_err(
-                                    |err| RoutingError::GetEncodingFormFailed(err.to_string()),
-                                )?;
-                            let (_, cur_form_num_gy) =
-                                get_encoding_form(label_gy, &last.encoding_scheme).map_err(
-                                    |err| RoutingError::GetEncodingFormFailed(err.to_string()),
-                                )?;
-                            let label_yg_backup = label_yg_32;
-                            if cur_form_num_yg < form_num {
-                                label_yg =
-                                    re_encode(label_yg, &last.encoding_scheme, Some(form_num))
-                                        .map_err(|err| {
-                                            RoutingError::ReEncodeFailed(err.to_string())
-                                        })?;
+                            let mut label = RoutingLabel::try_new(link.label.bits() as u64)
+                                .ok_or_else(|| {
+                                    RoutingError::RoutingLabelTryNewFailed(link.label.bits() as u16)
+                                })?;
+                            let (_, cur_form_num) = get_encoding_form(label, &last.encoding_scheme)
+                                .map_err(|err| {
+                                    RoutingError::GetEncodingFormFailed(err.to_string())
+                                })?;
+                            if cur_form_num < form_num {
+                                label = re_encode(label, &last.encoding_scheme, Some(form_num))
+                                    .map_err(|err| RoutingError::ReEncodeFailed(err.to_string()))?;
                             }
-                            labels.push(label_yg);
+                            labels.push(label);
                             let hop = Hop {
-                                label: label_yg.clone(),
-                                orig_label: label_yg_backup.clone(),
+                                label: label.clone(),
+                                orig_label: link.label.clone(),
                                 scheme: last.encoding_scheme.clone(),
                                 inverse_form_num: form_num,
                             };
                             hops.push(hop);
-                            form_num = cur_form_num_gy;
+                            form_num = link.encoding_form_number;
                         } else {
-                            return Err(RoutingError::NoInwardLinksByIp("last", node.ipv6.clone()));
+                            return Err(RoutingError::NoInwardLinksByIp("node", last.ipv6.clone()));
                         }
                     } else {
-                        return Err(RoutingError::NoInwardLinksByIp("node", last.ipv6.clone()));
+                        if let Some(greta_opinion_link) = node
+                            .inward_links_by_ip
+                            .lock()
+                            .get(&last.ipv6)
+                            .and_then(|ls| ls.get(0))
+                        {
+                            if let Some(yury_opinion_link) = last
+                                .inward_links_by_ip
+                                .lock()
+                                .get(&node.ipv6)
+                                .and_then(|ls| ls.get(0))
+                            {
+                                // Yury sends message to Caleb via Greta
+                                // last stand for yury
+                                // node stands for greta
+                                let label_yg_32 =
+                                    RoutingLabel::try_new(yury_opinion_link.peer_num as u32)
+                                        .ok_or_else(|| {
+                                            RoutingError::RoutingLabelTryNewFailed(
+                                                yury_opinion_link.peer_num,
+                                            )
+                                        })?;
+                                let mut label_yg =
+                                    RoutingLabel::try_new(yury_opinion_link.peer_num as u64)
+                                        .ok_or_else(|| {
+                                            RoutingError::RoutingLabelTryNewFailed(
+                                                yury_opinion_link.peer_num,
+                                            )
+                                        })?;
+                                let label_gy =
+                                    RoutingLabel::try_new(greta_opinion_link.peer_num as u64)
+                                        .ok_or_else(|| {
+                                            RoutingError::RoutingLabelTryNewFailed(
+                                                greta_opinion_link.peer_num,
+                                            )
+                                        })?;
+                                let (_, cur_form_num_yg) =
+                                    get_encoding_form(label_yg, &node.encoding_scheme).map_err(
+                                        |err| RoutingError::GetEncodingFormFailed(err.to_string()),
+                                    )?;
+                                let (_, cur_form_num_gy) =
+                                    get_encoding_form(label_gy, &last.encoding_scheme).map_err(
+                                        |err| RoutingError::GetEncodingFormFailed(err.to_string()),
+                                    )?;
+                                let label_yg_backup = label_yg_32;
+                                if cur_form_num_yg < form_num {
+                                    label_yg =
+                                        re_encode(label_yg, &last.encoding_scheme, Some(form_num))
+                                            .map_err(|err| {
+                                                RoutingError::ReEncodeFailed(err.to_string())
+                                            })?;
+                                }
+                                labels.push(label_yg);
+                                let hop = Hop {
+                                    label: label_yg.clone(),
+                                    orig_label: label_yg_backup.clone(),
+                                    scheme: last.encoding_scheme.clone(),
+                                    inverse_form_num: form_num,
+                                };
+                                hops.push(hop);
+                                form_num = cur_form_num_gy;
+                            } else {
+                                return Err(RoutingError::NoInwardLinksByIp(
+                                    "last",
+                                    node.ipv6.clone(),
+                                ));
+                            }
+                        } else {
+                            return Err(RoutingError::NoInwardLinksByIp("node", last.ipv6.clone()));
+                        }
                     }
                 }
                 last = Some(node);

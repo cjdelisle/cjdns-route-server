@@ -36,14 +36,17 @@ pub mod websock;
 const KEEP_TABLE_CLEAN_CYCLE: Duration = Duration::from_secs(30);
 
 /// Server entry point. Requires config (loaded from an external file) to run.
-pub async fn main(config: Config) -> Result<()> {
+pub async fn main(config: Config, opts: crate::args::Opts) -> Result<()> {
     // Background tasks we are going to spawn
     let mut tasks = Vec::new();
 
     // The server context instance
     let (peers, mut announces) = create_peers();
     let peers = Arc::new(peers);
-    let server = Arc::new(Server::new(Arc::clone(&peers)));
+    let server = Arc::new(Server::new(
+        Arc::clone(&peers),
+        opts.use_old_compute_routing_label_impl,
+    ));
 
     // Run timeout task
     {
@@ -116,6 +119,7 @@ struct Server {
     peers: Arc<Peers>,
     nodes: Nodes,
     mut_state: Mutex<ServerMut>,
+    use_old_compute_routing_label_impl: bool,
 }
 
 struct ServerMut {
@@ -138,7 +142,7 @@ enum ReplyError {
 }
 
 impl Server {
-    fn new(peers: Arc<Peers>) -> Self {
+    fn new(peers: Arc<Peers>, use_old_compute_routing_label_impl: bool) -> Self {
         Server {
             peers: peers.clone(),
             nodes: Nodes::new(peers),
@@ -148,6 +152,7 @@ impl Server {
                 current_node: None,
                 routing: Routing::new(),
             }),
+            use_old_compute_routing_label_impl,
         }
     }
 }
