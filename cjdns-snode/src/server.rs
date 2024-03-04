@@ -8,7 +8,6 @@ use std::time::{Duration, SystemTime};
 use anyhow::Error;
 use anyhow::Result;
 use futures::future::try_join_all;
-use futures::StreamExt;
 use http::Uri;
 use parking_lot::Mutex;
 use tokio::task;
