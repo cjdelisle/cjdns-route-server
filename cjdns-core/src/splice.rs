@@ -69,8 +69,7 @@ pub fn splice<L: LabelBits>(labels: &[RoutingLabel<L>]) -> Result<RoutingLabel<L
         result_bits = ((result_bits ^ L::ONE) << addon_bitlen) ^ addon.bits();
     }
 
-    RoutingLabel::try_new(result_bits)
-        .ok_or_else(|| SpliceError::RoutingLabelTryNewFailed(result_bits.to_string()))
+    RoutingLabel::try_new(result_bits).ok_or_else(|| SpliceError::RoutingLabelTryNewFailed(result_bits.to_string()))
 }
 
 /// Get the **encoding form** used for the first **director** of the `RoutingLabel`.
@@ -252,8 +251,7 @@ pub fn re_encode<L: LabelBits>(label: RoutingLabel<L>, scheme: &EncodingScheme, 
     result_bits = (result_bits << (desired_bit_count as u32)) | dir;
     result_bits = (result_bits << (desired_prefix_len as u32)) | desired_prefix.into();
 
-    RoutingLabel::try_new(result_bits)
-        .ok_or_else(|| SpliceError::RoutingLabelTryNewFailed(result_bits.to_string()))
+    RoutingLabel::try_new(result_bits).ok_or_else(|| SpliceError::RoutingLabelTryNewFailed(result_bits.to_string()))
 }
 
 /// Tests if a `label` contains only one hop.
@@ -407,8 +405,7 @@ pub fn unsplice<L: LabelBits>(destination: RoutingLabel<L>, mid_path: RoutingLab
         return Err(SpliceError::RoutesThroughFailed);
     }
 
-    RoutingLabel::try_new(destination.bits() >> label_highest_set_bit(&mid_path))
-        .ok_or_else(|| SpliceError::HighestSetBitIsBroken)
+    RoutingLabel::try_new(destination.bits() >> label_highest_set_bit(&mid_path)).ok_or_else(|| SpliceError::HighestSetBitIsBroken)
 }
 
 #[cfg(test)]

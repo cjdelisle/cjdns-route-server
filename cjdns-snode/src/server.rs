@@ -43,10 +43,7 @@ pub async fn main(config: Config, opts: crate::args::Opts) -> Result<()> {
     // The server context instance
     let (peers, mut announces) = create_peers();
     let peers = Arc::new(peers);
-    let server = Arc::new(Server::new(
-        Arc::clone(&peers),
-        opts.use_old_compute_routing_label_impl,
-    ));
+    let server = Arc::new(Server::new(Arc::clone(&peers), opts.use_old_compute_routing_label_impl));
 
     // Run timeout task
     {
