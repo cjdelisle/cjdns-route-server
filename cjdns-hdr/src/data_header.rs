@@ -32,7 +32,7 @@ impl DataHeader {
         let (version_with_flags, content_type_code) = data_reader
             .read(ExpectedSize::Exact(Self::SIZE), |r| {
                 let version_with_flags = r.read_u8()?;
-                let _padding = r.skip(1)?;
+                r.skip(1)?;
                 let content_type_code = r.read_u16_be()?;
                 Ok((version_with_flags, content_type_code))
             })

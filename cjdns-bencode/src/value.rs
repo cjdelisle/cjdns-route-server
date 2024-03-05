@@ -14,6 +14,19 @@ pub struct BValue(BendyValue<'static>);
 
 pub struct BValueBuilder(Option<BendyValue<'static>>);
 
+// https://rust-lang.github.io/rust-clippy/master/index.html#/result_unit_err
+#[derive(Debug)]
+pub struct BValueError;
+
+impl std::fmt::Display for BValueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "BValueError")
+    }
+}
+
+impl std::error::Error for BValueError {}
+pub type BValueResult<Ret> = std::result::Result<Ret, BValueError>;
+
 impl BValue {
     /// Create new `BValue` using builder.
     pub fn builder() -> BValueBuilder {
@@ -33,26 +46,26 @@ impl BValue {
     }
 
     /// Access stored Integer value.
-    pub fn as_int(&self) -> Result<i64, ()> {
+    pub fn as_int(&self) -> BValueResult<i64> {
         match self {
             &BValue(BendyValue::Integer(value)) => Ok(value),
-            _ => Err(()),
+            _ => Err(BValueError),
         }
     }
 
     /// Access stored bytes value as UTF-8 string.
-    pub fn as_string(&self) -> Result<String, ()> {
+    pub fn as_string(&self) -> BValueResult<String> {
         match self {
-            &BValue(BendyValue::Bytes(ref value)) => Ok(String::from_utf8(value.to_vec()).map_err(|_| ())?),
-            _ => Err(()),
+            &BValue(BendyValue::Bytes(ref value)) => Ok(String::from_utf8(value.to_vec()).map_err(|_| BValueError)?),
+            _ => Err(BValueError),
         }
     }
 
     /// Access stored bytes value.
-    pub fn as_bytes(&self) -> Result<Vec<u8>, ()> {
+    pub fn as_bytes(&self) -> BValueResult<Vec<u8>> {
         match self {
             &BValue(BendyValue::Bytes(ref value)) => Ok(value.to_vec()),
-            _ => Err(()),
+            _ => Err(BValueError),
         }
     }
 
@@ -66,43 +79,43 @@ impl BValue {
     }
 
     /// Access stored Dict value by key and return the data under that key.
-    pub fn get_dict_value(&self, key: &str) -> Result<Option<BValue>, ()> {
+    pub fn get_dict_value(&self, key: &str) -> BValueResult<Option<BValue>> {
         let dict = match self {
             &BValue(BendyValue::Dict(ref value)) => value,
-            _ => return Err(()),
+            _ => return Err(BValueError),
         };
         let value = dict.get(key.as_bytes());
-        Ok(value.cloned().map(|v| BValue(v)))
+        Ok(value.cloned().map(BValue))
     }
 
     /// Access stored Dict value by key and return the string data under that key.
     /// If key does not exist, or associated value is not string, error is returned.
-    pub fn get_dict_value_str(&self, key: &str) -> Result<String, ()> {
-        self.get_dict_value(key)?.ok_or(())?.as_string()
+    pub fn get_dict_value_str(&self, key: &str) -> BValueResult<String> {
+        self.get_dict_value(key)?.ok_or(BValueError)?.as_string()
     }
 
     /// Access stored Dict value by key and return the bytes data under that key.
     /// If key does not exist, or associated value is not bytes, error is returned.
-    pub fn get_dict_value_bytes(&self, key: &str) -> Result<Vec<u8>, ()> {
-        self.get_dict_value(key)?.ok_or(())?.as_bytes()
+    pub fn get_dict_value_bytes(&self, key: &str) -> BValueResult<Vec<u8>> {
+        self.get_dict_value(key)?.ok_or(BValueError)?.as_bytes()
     }
 
-    pub fn delete_dict_value(&mut self, key: &str) -> Result<(), ()> {
+    pub fn delete_dict_value(&mut self, key: &str) -> BValueResult<()> {
         let dict = self.as_mut_dict()?;
         let _ = dict.remove(key.as_bytes());
         Ok(())
     }
 
-    pub fn set_dict_value(&mut self, key: &'static str, value: BValue) -> Result<(), ()> {
+    pub fn set_dict_value(&mut self, key: &'static str, value: BValue) -> BValueResult<()> {
         let dict = self.as_mut_dict()?;
         let _ = dict.insert(Cow::from(key.as_bytes()), value.0);
         Ok(())
     }
 
-    fn as_mut_dict(&mut self) -> Result<&mut BTreeMap<Cow<'static, [u8]>, BendyValue<'static>>, ()> {
+    fn as_mut_dict(&mut self) -> BValueResult<&mut BTreeMap<Cow<'static, [u8]>, BendyValue<'static>>> {
         match self {
             BValue(BendyValue::Dict(value)) => Ok(value),
-            _ => Err(()),
+            _ => Err(BValueError),
         }
     }
 }
@@ -272,6 +285,6 @@ mod debug {
     }
 
     fn is_ascii(bytes: &[u8]) -> bool {
-        bytes.iter().all(|&v| v >= 32 && v <= 127)
+        bytes.iter().all(|&v| (32..=127).contains(&v))
     }
 }

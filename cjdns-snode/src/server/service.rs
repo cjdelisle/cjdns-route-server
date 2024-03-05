@@ -133,13 +133,11 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
         if route_header.version > 0 {
             route_header.version
         } else if let Some(p) = content_benc.get_dict_value("p").ok().flatten() {
-            let p = p
-                .as_int()
+            p.as_int()
                 .ok()
                 .filter(|&p| p > 0)
                 .map(|p| p as u32)
-                .ok_or(anyhow!("bad message: 'p' expected to be positive int"))?;
-            p
+                .ok_or(anyhow!("bad message: 'p' expected to be positive int"))?
         } else {
             if let Some(ip) = route_header.ip6.as_ref() {
                 warn!("message from {} with missing version: {:?} {:?}", ip, route_header, content_benc);
@@ -251,7 +249,7 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
                                     if route_label == route.label {
                                         "matches computed".to_string()
                                     } else {
-                                        format!("differs from computed {}", route.label.to_string())
+                                        format!("differs from computed {}", route.label)
                                     },
                                     if num_routes > 1 {
                                         format!(" ({} choices)", num_routes)
@@ -283,9 +281,10 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
                     // The first byte is the number of bytes taken by each version in the list (always 1 for now),
                     // followed by the versions themselves, encoded in big endian.
                     .add_dict_entry("np", |b| {
-                        let mut buf = Vec::with_capacity(2);
-                        buf.push(1); // Number of bytes taken by each version
-                        buf.push(tar.version as u8); // Version as 1-byte integer
+                        let buf = vec![
+                            1,                 // Number of bytes taken by each version
+                            tar.version as u8, // Version as 1-byte integer
+                        ];
                         b.set_bytes(buf)
                     })
             } else {

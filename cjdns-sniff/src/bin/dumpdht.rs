@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use anyhow::{anyhow, Error};
 use tokio::{select, signal};
 
-use cjdns_bencode::BValue;
+use cjdns_bencode::{BValue, BValueError, BValueResult};
 use cjdns_hdr::ParseError;
 use cjdns_keys::CJDNS_IP6;
 use cjdns_sniff::{Content, ContentType, Message, ReceiveError, Sniffer};
@@ -67,13 +67,11 @@ fn dump_msg(msg: Message) -> Result<(), Error> {
     Ok(())
 }
 
-fn dump_bencode(benc: BValue, buf: &mut Vec<String>) -> Result<(), ()> {
+fn dump_bencode(benc: BValue, buf: &mut Vec<String>) -> BValueResult<()> {
     let q = if let Some(q) = benc.get_dict_value("q")? {
         Some(q)
-    } else if let Some(sq) = benc.get_dict_value("sq")? {
-        Some(sq)
     } else {
-        None
+        benc.get_dict_value("sq")?
     };
 
     if let Some(qb) = q {
@@ -83,7 +81,7 @@ fn dump_bencode(benc: BValue, buf: &mut Vec<String>) -> Result<(), ()> {
         if is_fn {
             if let Some(tar) = benc.get_dict_value("tar")? {
                 let tar = tar.as_bytes()?;
-                let tar = CJDNS_IP6::try_from(tar.as_slice()).map_err(|_| ())?;
+                let tar = CJDNS_IP6::try_from(tar.as_slice()).map_err(|_| BValueError)?;
                 buf.push(tar.to_string());
             }
         }

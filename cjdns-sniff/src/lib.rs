@@ -102,7 +102,7 @@ impl Sniffer {
         for page in 0.. {
             let res = cjdns_invoke!(conn, "UpperDistributor_listHandlers", "page" = page)
                 .await
-                .map_err(|e| ConnectError::RpcError(e))?;
+                .map_err(ConnectError::RpcError)?;
             // Expected response is of form `{ "handlers" : [ { "type" : 0xFFF1, "udpPort" : 1234 }, { "type" : 0xFFF2, "udpPort" : 1235 }, ... ] }`
             let handlers = res
                 .get("handlers")
@@ -142,8 +142,8 @@ impl Sniffer {
 
     async fn connect_with_new_port(conn: &mut Connection, content_type_code: u32) -> Result<UdpSocket, ConnectError> {
         // Bind a new UDP socket on random port
-        let socket = UdpSocket::bind(":::0").await.map_err(|e| ConnectError::SocketError(e))?;
-        let port = socket.local_addr().map_err(|e| ConnectError::SocketError(e))?.port();
+        let socket = UdpSocket::bind(":::0").await.map_err(ConnectError::SocketError)?;
+        let port = socket.local_addr().map_err(ConnectError::SocketError)?.port();
 
         // Register this port within CJDNS router
         cjdns_invoke!(
@@ -153,7 +153,7 @@ impl Sniffer {
             "udpPort" = port as i64
         )
         .await
-        .map_err(|e| ConnectError::RpcError(e))?;
+        .map_err(ConnectError::RpcError)?;
 
         Ok(socket)
     }
@@ -166,7 +166,7 @@ impl Sniffer {
         let mut buf = Vec::new();
 
         // Route header
-        let route_header_bytes = msg.route_header.serialize().map_err(|e| SendError::SerializeError(e))?;
+        let route_header_bytes = msg.route_header.serialize().map_err(SendError::SerializeError)?;
         buf.extend_from_slice(&route_header_bytes);
 
         // Data header
@@ -174,7 +174,7 @@ impl Sniffer {
             content_type: msg.content_type,
             ..DataHeader::default()
         };
-        let data_header_bytes = data_header.serialize().map_err(|e| SendError::SerializeError(e))?;
+        let data_header_bytes = data_header.serialize().map_err(SendError::SerializeError)?;
         buf.extend_from_slice(&data_header_bytes);
 
         // Content
@@ -184,7 +184,7 @@ impl Sniffer {
                 content: Content::Benc(content_benc),
                 ..
             } if *content_type == ContentType::Cjdht => {
-                let bytes = content_benc.encode().map_err(|e| SendError::BencodeError(e))?;
+                let bytes = content_benc.encode().map_err(SendError::BencodeError)?;
                 Some(bytes)
             }
             Message {
@@ -192,7 +192,7 @@ impl Sniffer {
                 content: Content::Ctrl(content),
                 ..
             } if route_header.is_ctrl => {
-                let content_bytes = content.serialize().map_err(|e| SendError::SerializeError(e))?;
+                let content_bytes = content.serialize().map_err(SendError::SerializeError)?;
                 Some(content_bytes)
             }
             Message {
@@ -206,7 +206,7 @@ impl Sniffer {
             buf.extend_from_slice(&content_bytes);
         }
 
-        let written = self.socket.send_to(&buf, dest).await.map_err(|e| SendError::SocketError(e))?;
+        let written = self.socket.send_to(&buf, dest).await.map_err(SendError::SocketError)?;
         if written != buf.len() {
             return Err(SendError::WriteError(written, buf.len()));
         }
@@ -219,7 +219,7 @@ impl Sniffer {
         // Limit receive packet lenght to typical Ethernet MTU for now; need to check actual max packet length on CJDNS Node side though.
         let mut buf = [0; 1500];
 
-        let (size, _) = self.socket.recv_from(&mut buf).await.map_err(|e| ReceiveError::SocketError(e))?;
+        let (size, _) = self.socket.recv_from(&mut buf).await.map_err(ReceiveError::SocketError)?;
         let data = &buf[..size];
         let msg = Self::decode_message(data).map_err(|e| ReceiveError::ParseError(e, data.to_vec()))?;
 
@@ -230,13 +230,13 @@ impl Sniffer {
     /// Though, this connection will be automatically reused on next connect.
     pub async fn disconnect(&mut self) -> Result<(), ConnectError> {
         // Get local UDP port we are listening on
-        let port = self.socket.local_addr().map_err(|e| ConnectError::SocketError(e))?.port();
+        let port = self.socket.local_addr().map_err(ConnectError::SocketError)?.port();
 
         // Unregister this handler from CJDNS router
         let conn = &mut self.cjdns;
         cjdns_invoke!(conn, "UpperDistributor_unregisterHandler", "udpPort" = port as i64)
             .await
-            .map_err(|e| ConnectError::RpcError(e))?;
+            .map_err(ConnectError::RpcError)?;
 
         // UDP socket will be disconnected automatically when dropped
         Ok(())
@@ -275,7 +275,7 @@ impl Sniffer {
         };
 
         // Data itself
-        let data_bytes = if bytes.len() > 0 { Some(bytes) } else { None };
+        let data_bytes = if !bytes.is_empty() { Some(bytes) } else { None };
 
         // Content
         let content = match (content_type, data_bytes, is_ctrl) {

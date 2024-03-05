@@ -366,7 +366,7 @@ mod parser {
     /// Properly encoded entity has the structure: `[entity_length][entity_type][entity_data]`.
     /// Entity length is read in `parse_entities_impl`, so received `entity_data` only has entity type and parsing data.
     fn parse_entity(entity_data: &[u8]) -> Result<Option<Entity>, EntityParserError> {
-        let &entity_type = entity_data.get(0).expect("internal error: entity data without entity type");
+        let &entity_type = entity_data.first().expect("internal error: entity data without entity type");
         let parsing_data = &entity_data[1..];
         match entity_type {
             ENCODING_SCHEME_TYPE => Ok(Some(parse_encoding_scheme(parsing_data)?)),
@@ -388,7 +388,7 @@ mod parser {
 
     fn parse_version(version_data: &[u8]) -> Result<Entity, EntityParserError> {
         let version = Reader::new(version_data)
-            .read(ExpectedSize::Exact(VERSION_ENTITY_SIZE), |r| Ok(r.read_u16_be()?))
+            .read(ExpectedSize::Exact(VERSION_ENTITY_SIZE), |r| r.read_u16_be())
             .map_err(|_| EntityParserError::InvalidSize)?;
         Ok(Entity::NodeProtocolVersion(version))
     }

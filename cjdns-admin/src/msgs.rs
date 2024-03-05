@@ -29,14 +29,14 @@ mod internal {
     // Implements `Request` for `Query` and `QueryAuth`.
     impl<T: Serialize> Request for T {
         fn to_bencode(&self) -> Result<Vec<u8>, Error> {
-            bencode::to_bytes(self).map_err(|e| Error::Protocol(e))
+            bencode::to_bytes(self).map_err(Error::Protocol)
         }
     }
 
     // Implements `Response` for `GenericResponse`.
     impl<T: DeserializeOwned> Response for T {
         fn from_bencode(bytes: &[u8]) -> Result<Self, Error> {
-            bencode::from_bytes(bytes).map_err(|e| Error::Protocol(e))
+            bencode::from_bytes(bytes).map_err(Error::Protocol)
         }
     }
 

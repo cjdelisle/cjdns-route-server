@@ -163,7 +163,7 @@ fn find_shortest_form<L: LabelBits>(dir: L, scheme: &EncodingScheme) -> Result<E
         .iter()
         .filter(|&form| (form.params().0 as u32) >= dir_bits)
         .min_by_key(|&form| form.params().0)
-        .map(|&form| form)
+        .copied()
         .ok_or(SpliceError::CannotFindForm)
 }
 
@@ -405,7 +405,7 @@ pub fn unsplice<L: LabelBits>(destination: RoutingLabel<L>, mid_path: RoutingLab
         return Err(SpliceError::RoutesThroughFailed);
     }
 
-    RoutingLabel::try_new(destination.bits() >> label_highest_set_bit(&mid_path)).ok_or_else(|| SpliceError::HighestSetBitIsBroken)
+    RoutingLabel::try_new(destination.bits() >> label_highest_set_bit(&mid_path)).ok_or(SpliceError::HighestSetBitIsBroken)
 }
 
 #[cfg(test)]

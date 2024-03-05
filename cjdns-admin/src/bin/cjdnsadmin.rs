@@ -75,7 +75,7 @@ fn parse_remote_fn_args(s: &str) -> Result<Vec<ArgValue>, ()> {
     }
 
     let mut fn_args = Vec::new();
-    for arg in s.split(",").map(str::trim) {
+    for arg in s.split(',').map(str::trim) {
         let arg = match arg.chars().next().ok_or(())? {
             '-' | '0'..='9' => {
                 let value = arg.parse().map_err(|_| ())?;

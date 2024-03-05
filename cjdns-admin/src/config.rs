@@ -8,10 +8,10 @@ use tokio::{fs, io};
 use crate::errors::Error;
 use crate::ConnectionOptions;
 
-const DEFAULT_ADDR: &'static str = "127.0.0.1";
+const DEFAULT_ADDR: &str = "127.0.0.1";
 const DEFAULT_PORT: u16 = 11234;
-const DEFAULT_PASSWORD: &'static str = "NONE";
-const DEFAULT_CONFIG_FILE_NAME: &'static str = ".cjdnsadmin";
+const DEFAULT_PASSWORD: &str = "NONE";
+const DEFAULT_CONFIG_FILE_NAME: &str = ".cjdnsadmin";
 
 /// Connection options. Can be loaded from a config file.
 #[derive(Clone, Default, PartialEq, Eq, Debug, Deserialize)]
@@ -62,12 +62,12 @@ impl Opts {
 
     fn build_connection_options(self, conf_file: Option<PathBuf>) -> ConnectionOptions {
         ConnectionOptions {
-            addr: self.addr.as_ref().map_or(DEFAULT_ADDR, |s| &s).to_string(),
+            addr: self.addr.as_ref().map_or(DEFAULT_ADDR, |s| s).to_string(),
             port: self.port.unwrap_or(DEFAULT_PORT),
             password: self
                 .password
                 .as_ref()
-                .map_or_else(|| if self.anon { "" } else { DEFAULT_PASSWORD }, |s| &s)
+                .map_or_else(|| if self.anon { "" } else { DEFAULT_PASSWORD }, |s| s)
                 .to_string(),
             used_config_file: conf_file.map(|path| path.to_string_lossy().into_owned()),
         }
@@ -80,18 +80,18 @@ impl Opts {
 
         if let Some(mut path) = dirs::home_dir() {
             path.push(DEFAULT_CONFIG_FILE_NAME);
-            return Some(path.into());
+            return Some(path);
         }
 
         None // Unable to locate HOME dir - unsupported platform?
     }
 
     fn parse_config(json: &[u8]) -> Result<Self, Error> {
-        serde_json::from_slice(json).map_err(|e| Error::BadConfigFile(e))
+        serde_json::from_slice(json).map_err(Error::BadConfigFile)
     }
 
     async fn read_config_file(file_path: &Path) -> Result<Self, Error> {
-        let json = fs::read(file_path).await.map_err(|e| Error::ConfigFileRead(e))?;
+        let json = fs::read(file_path).await.map_err(Error::ConfigFileRead)?;
         Self::parse_config(&json)
     }
 

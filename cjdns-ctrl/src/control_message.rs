@@ -4,7 +4,6 @@ use std::mem::size_of_val;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use cjdns_bytes::{ExpectedSize, ParseError, Reader, SerializeError, Writer};
-use netchecksum;
 
 use crate::{ErrorData, PingData};
 

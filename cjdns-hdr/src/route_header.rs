@@ -49,7 +49,7 @@ impl RouteHeader {
                 let header_bytes = r.read_slice(SwitchHeader::SIZE)?;
                 let version = r.read_u32_be()?;
                 let flags = r.read_u8()?;
-                let _padding = r.skip(3)?;
+                r.skip(3)?;
                 let ip6_bytes = r.read_slice(16)?;
                 Ok((pk_bytes, header_bytes, version, flags, ip6_bytes))
             })
@@ -63,7 +63,7 @@ impl RouteHeader {
         let switch_header = SwitchHeader::parse(header_bytes)?;
         let is_ctrl = flags & CONTROL_FRAME != 0;
         let is_incoming = flags & INCOMING_FRAME != 0;
-        let ip6_from_bytes = if ip6_bytes == &ZERO_IP6_BYTES {
+        let ip6_from_bytes = if ip6_bytes == ZERO_IP6_BYTES {
             None
         } else {
             let ip6 = CJDNS_IP6::try_from(ip6_bytes).map_err(|_| ParseError::InvalidData("can't create ip6 from received bytes"))?;
@@ -121,7 +121,7 @@ impl RouteHeader {
                 }
             }
         }
-        let public_key_bytes = self.public_key.as_ref().map(|key| &*(*key)).unwrap_or_else(|| ZERO_PUBLIC_KEY_BYTES.as_ref());
+        let public_key_bytes = self.public_key.as_deref().unwrap_or_else(|| ZERO_PUBLIC_KEY_BYTES.as_ref());
         let switch_header_bytes = self.switch_header.serialize()?;
         let flags = {
             let mut ret_flag = 0;
@@ -134,7 +134,7 @@ impl RouteHeader {
             ret_flag
         };
         let pad_bytes = &[0u8; 3];
-        let ip6_bytes = self.ip6.as_ref().map(|ip6| &*(*ip6)).unwrap_or_else(|| ZERO_IP6_BYTES.as_ref());
+        let ip6_bytes = self.ip6.as_deref().unwrap_or_else(|| ZERO_IP6_BYTES.as_ref());
 
         let mut data_writer = Writer::with_capacity(Self::SIZE);
         data_writer.write_slice(public_key_bytes);

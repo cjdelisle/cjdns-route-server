@@ -214,7 +214,7 @@ mod handlers {
     pub(super) async fn handle_debug_node(ip6: String, server: Arc<Server>) -> Result<StatusCode, Rejection> {
         let ip = CJDNS_IP6::try_from(ip6.as_str()).map_err(|e| warp::reject::custom(WebServerError::BadIP6Address(ip6, e.to_string())))?;
         server.mut_state.lock().debug_node = Some(ip);
-        return Ok(StatusCode::OK);
+        Ok(StatusCode::OK)
     }
 
     pub(super) async fn handle_dump(server: Arc<Server>) -> Result<Vec<u8>, Infallible> {
@@ -286,7 +286,7 @@ mod handlers {
             }
         }
         let reply = json! {{}};
-        return Ok(reply_json(&reply));
+        Ok(reply_json(&reply))
     }
 
     pub(super) async fn handle_ni_empty(server: Arc<Server>) -> Result<impl Reply, Infallible> {
@@ -318,7 +318,7 @@ mod handlers {
             }},
         }};
 
-        return Ok(reply_json(&reply));
+        Ok(reply_json(&reply))
     }
 
     pub(super) async fn handle_walk(server: Arc<Server>) -> Result<impl Reply, Infallible> {

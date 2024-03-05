@@ -37,7 +37,7 @@ pub(super) struct LinkStateEntry {
 pub(super) fn mk_link(ann_peer: &PeerData, ann: &Announcement) -> Link {
     let ann_time = ann.header.timestamp;
     Link {
-        label: ann_peer.label.as_ref().expect("zero label").clone(),
+        label: *ann_peer.label.as_ref().expect("zero label"),
         encoding_form_number: ann_peer.encoding_form_number,
         peer_num: ann_peer.peer_num,
         link_state: Arc::new(Mutex::new(HashMap::new())),

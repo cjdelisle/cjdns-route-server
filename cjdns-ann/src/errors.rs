@@ -13,6 +13,7 @@ pub enum PacketError {
 }
 
 #[derive(Error, Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(clippy::enum_variant_names)]
 pub enum ParserError {
     #[error("Can't parse header: {0}")]
     CannotParseHeader(&'static str),

@@ -73,7 +73,7 @@ impl Nodes {
     }
 
     pub fn anns_dump(&self) -> Vec<u8> {
-        let mut writer = Writer::new();
+        let mut writer = Writer::default();
         let nodes_by_ip = self.nodes_by_ip.read();
         for node in nodes_by_ip.values() {
             let state = node.mut_state.read();
@@ -116,12 +116,10 @@ impl Nodes {
         let encoding_scheme = {
             if let Some(encoding_scheme) = encoding_scheme {
                 encoding_scheme
+            } else if let Some(onode) = self.nodes_by_ip.read().get(&ipv6) {
+                onode.encoding_scheme.clone()
             } else {
-                if let Some(onode) = self.nodes_by_ip.read().get(&ipv6) {
-                    onode.encoding_scheme.clone()
-                } else {
-                    return Err(anyhow!("cannot create node we do not know its encoding scheme"));
-                }
+                return Err(anyhow!("cannot create node we do not know its encoding scheme"));
             }
         };
 

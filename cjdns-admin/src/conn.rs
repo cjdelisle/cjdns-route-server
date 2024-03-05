@@ -177,13 +177,13 @@ impl Connection {
         let msg = req.to_bencode()?;
         //dbg!(String::from_utf8_lossy(&msg));
         let socket = self.socket.lock().await;
-        socket.send(&msg).await.map_err(|e| Error::NetworkOperation(e))?;
+        socket.send(&msg).await.map_err(Error::NetworkOperation)?;
 
         // Limit receive packet lenght to typical Ethernet MTU for now; need to check actual max packet length on CJDNS Node side though.
         let mut buf = [0; 1500];
 
         // Reseive encoded response synchronously
-        let received = socket.recv(&mut buf).await.map_err(|e| Error::NetworkOperation(e))?;
+        let received = socket.recv(&mut buf).await.map_err(Error::NetworkOperation)?;
         let response = &buf[..received];
         //dbg!(String::from_utf8_lossy(&response));
 
@@ -193,12 +193,12 @@ impl Connection {
 }
 
 async fn create_udp_socket_sender(addr: &str, port: u16) -> Result<UdpSocket, Error> {
-    let ip_addr = addr.parse::<IpAddr>().map_err(|e| Error::BadNetworkAddress(e))?;
+    let ip_addr = addr.parse::<IpAddr>().map_err(Error::BadNetworkAddress)?;
     let remote_address = SocketAddr::new(ip_addr, port);
 
     let local_address = "0.0.0.0:0";
-    let socket = UdpSocket::bind(local_address).await.map_err(|e| Error::NetworkOperation(e))?;
-    socket.connect(&remote_address).await.map_err(|e| Error::NetworkOperation(e))?;
+    let socket = UdpSocket::bind(local_address).await.map_err(Error::NetworkOperation)?;
+    socket.connect(&remote_address).await.map_err(Error::NetworkOperation)?;
 
     Ok(socket)
 }

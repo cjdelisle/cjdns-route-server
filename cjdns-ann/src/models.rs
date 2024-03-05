@@ -50,6 +50,7 @@ pub const LINK_STATE_SLOTS: u8 = 18;
 
 /// Announcement message entity types.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Entity {
     /// The packet diagram for version entity looks as follows:
     /// ```md
@@ -163,6 +164,6 @@ impl AnnHash {
     #[inline]
     pub fn bytes(&self) -> &[u8] {
         let AnnHash(bytes) = self;
-        &bytes
+        bytes
     }
 }

@@ -228,14 +228,10 @@ mod reader {
 
 mod writer {
     /// Buffer writer. Wrapper over `Vec<u8`.
+    #[derive(Default)]
     pub struct Writer(Vec<u8>);
 
     impl Writer {
-        /// Instantiates new writer.
-        pub fn new() -> Self {
-            Self(Vec::new())
-        }
-
         /// Instantiates writer with provided `capacity`.
         pub fn with_capacity(capacity: usize) -> Self {
             Self(Vec::with_capacity(capacity))
