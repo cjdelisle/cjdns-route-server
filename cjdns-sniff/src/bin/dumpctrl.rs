@@ -58,7 +58,7 @@ fn dump_msg(msg: Message) -> Result<(), Error> {
         match ctrl.msg_type {
             CtrlMessageType::Error => {
                 let err_data = ctrl.get_error_data().ok_or_else(|| anyhow!("invalid control error message"))?;
-                buf.push(format!("{}", err_type_str(err_data.err_type)));
+                buf.push(err_type_str(err_data.err_type).to_string());
                 buf.push(format!("label_at_err_node: {}", err_data.switch_header.label));
                 buf.push(hex::encode(&err_data.additional));
             }

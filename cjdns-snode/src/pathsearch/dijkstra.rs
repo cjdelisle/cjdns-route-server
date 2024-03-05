@@ -165,7 +165,7 @@ where
             let mut rev_path = Vec::<T>::new();
 
             let mut cur_tag = end_tag;
-            while let Some(prev_tag) = previous.get(&cur_tag) {
+            while let Some(prev_tag) = previous.get(cur_tag) {
                 cur_tag = prev_tag;
                 if *prev_tag != *start {
                     let waypoint = prev_tag.clone();

@@ -15,56 +15,69 @@ pub enum ReturnValue {
     Map(BTreeMap<String, ReturnValue>),
 }
 
+// https://rust-lang.github.io/rust-clippy/master/index.html#/result_unit_err
+#[derive(Debug)]
+pub struct ReturnValueError;
+
+impl std::fmt::Display for ReturnValueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ReturnValueError")
+    }
+}
+
+impl std::error::Error for ReturnValueError {}
+pub type ReturnValueResult<Ret> = std::result::Result<Ret, ReturnValueError>;
+
 impl ReturnValue {
     /// Access stored Int value.
-    pub fn as_int(&self) -> Result<i64, ()> {
+    pub fn as_int(&self) -> ReturnValueResult<i64> {
         match *self {
             ReturnValue::Int(value) => Ok(value),
-            _ => Err(()),
+            _ => Err(ReturnValueError),
         }
     }
 
     /// Access stored String value.
-    pub fn as_str(&self) -> Result<&str, ()> {
+    pub fn as_str(&self) -> ReturnValueResult<&str> {
         match self {
             ReturnValue::String(value) => Ok(value.as_str()),
-            _ => Err(()),
+            _ => Err(ReturnValueError),
         }
     }
 
     /// Access stored List value, converting each list element.
     /// Returns a new `Vec` where each element is converted from another `ReturnValue` to the appropriate type.
-    pub fn as_list<'rv, T, F>(&'rv self, mut item_convert: F) -> Result<Vec<T>, ()>
+    pub fn as_list<'rv, T, F>(&'rv self, item_convert: F) -> ReturnValueResult<Vec<T>>
     where
-        F: FnMut(&'rv ReturnValue) -> Result<T, ()>,
+        F: FnMut(&'rv ReturnValue) -> ReturnValueResult<T>,
     {
         match self {
-            ReturnValue::List(list) => list.iter().map(|v| item_convert(v)).collect(),
-            _ => Err(()),
+            ReturnValue::List(list) => list.iter().map(item_convert).collect(),
+            _ => Err(ReturnValueError),
         }
     }
 
     /// Access stored Map value, converting each entry value element.
     /// Returns a new `BTreeMap` where each key is `String` and each value is converted from another `ReturnValue` to the appropriate type.
-    pub fn as_map<'rv, T, F>(&'rv self, mut value_convert: F) -> Result<BTreeMap<String, T>, ()>
+    pub fn as_map<'rv, T, F>(&'rv self, mut value_convert: F) -> ReturnValueResult<BTreeMap<String, T>>
     where
-        F: FnMut(&'rv ReturnValue) -> Result<T, ()>,
+        F: FnMut(&'rv ReturnValue) -> ReturnValueResult<T>,
     {
         match self {
             ReturnValue::Map(map) => map.iter().map(|(k, v)| value_convert(v).map(|v| (k.clone(), v))).collect(),
-            _ => Err(()),
+            _ => Err(ReturnValueError),
         }
     }
 
     /// Access stored List<Int> value.
     /// Returns a new `Vec` where each element is converted to `i64`.
-    pub fn as_int_list(&self) -> Result<Vec<i64>, ()> {
+    pub fn as_int_list(&self) -> ReturnValueResult<Vec<i64>> {
         self.as_list(Self::as_int)
     }
 
     /// Access stored Map<String, Int> value.
     /// Returns a new `BTreeMap` where each key is `String` and each value is converted to `i64`.
-    pub fn as_int_map(&self) -> Result<BTreeMap<String, i64>, ()> {
+    pub fn as_int_map(&self) -> ReturnValueResult<BTreeMap<String, i64>> {
         self.as_map(Self::as_int)
     }
 }

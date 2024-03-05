@@ -33,6 +33,19 @@ pub struct CJDNSKeys {
     pub ip6: CJDNS_IP6,
 }
 
+// https://rust-lang.github.io/rust-clippy/master/index.html#/result_unit_err
+#[derive(Debug)]
+pub struct CJDNSKeysApiError;
+
+impl std::fmt::Display for CJDNSKeysApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CJDNSKeysApiError")
+    }
+}
+
+impl std::error::Error for CJDNSKeysApiError {}
+pub type CJDNSKeysApiResult<Ret> = std::result::Result<Ret, CJDNSKeysApiError>;
+
 impl CJDNSKeysApi {
     /// Initialization function, which guarantees on success that it will be safe to call methods, which use "randomize" logic (i.e. `key_pair`, `gen_private_key`).
     ///
@@ -45,11 +58,11 @@ impl CJDNSKeysApi {
     /// // valid random key pair
     /// let keys = keys_api.key_pair();
     /// ```
-    pub fn new() -> std::result::Result<Self, ()> {
+    pub fn new() -> CJDNSKeysApiResult<Self> {
         if Self::init_sodiumoxide() {
             return Ok(Self);
         }
-        Err(())
+        Err(CJDNSKeysApiError)
     }
 
     /// for thread safety: https://docs.rs/sodiumoxide/0.2.5/sodiumoxide/randombytes/fn.randombytes.html

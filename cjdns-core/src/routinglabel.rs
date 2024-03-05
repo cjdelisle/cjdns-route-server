@@ -95,7 +95,7 @@ impl LabelBits for u32 {
         if Self::ZERO == *self {
             None
         } else {
-            Some(Self::BIT_SIZE - 1 - self.leading_zeros() as u32)
+            Some(Self::BIT_SIZE - 1 - self.leading_zeros())
         }
     }
 }
@@ -110,7 +110,7 @@ impl LabelBits for u64 {
         if Self::ZERO == *self {
             None
         } else {
-            Some(Self::BIT_SIZE - 1 - self.leading_zeros() as u32)
+            Some(Self::BIT_SIZE - 1 - self.leading_zeros())
         }
     }
 }
@@ -125,7 +125,7 @@ impl LabelBits for u128 {
         if Self::ZERO == *self {
             None
         } else {
-            Some(Self::BIT_SIZE - 1 - self.leading_zeros() as u32)
+            Some(Self::BIT_SIZE - 1 - self.leading_zeros())
         }
     }
 }

@@ -7,7 +7,6 @@
 //! For long buffers the result is different! This is a note of warning
 //! not to use any "standard" checksum here, if we want to keep compatibility
 //! with the JS implementation.
-
 use std::convert::TryInto;
 
 /// Sum all words (16 bit chunks) in the given data.
@@ -15,11 +14,11 @@ use std::convert::TryInto;
 /// (this is faster on LE machines which is a common case nowdays),
 /// so the resulting sum must be byte-flipped.
 fn sum_be_words(data: &[u8]) -> u32 {
-    if data.len() == 0 {
+    if data.is_empty() {
         return 0;
     }
 
-    let mut cur_data = &data[..];
+    let mut cur_data = data;
     let mut sum = 0_u32;
     while cur_data.len() >= 2 {
         // It's safe to unwrap because we verified there are at least 2 bytes
@@ -53,13 +52,26 @@ pub fn cksum_raw(buf: &[u8]) -> u16 {
     finalize_checksum(sum)
 }
 
-pub fn cksum_udp4(src_ip: [u8; 4], dst_ip: [u8; 4], src_port: u16, dst_port: u16, content: &[u8]) -> Result<u16, ()> {
+// https://rust-lang.github.io/rust-clippy/master/index.html#/result_unit_err
+#[derive(Debug)]
+pub struct ChkSumUdp4Error;
+
+impl std::fmt::Display for ChkSumUdp4Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ChkSumUdp4Error")
+    }
+}
+
+impl std::error::Error for ChkSumUdp4Error {}
+pub type ChkSumUdp4Result<Ret> = std::result::Result<Ret, ChkSumUdp4Error>;
+
+pub fn cksum_udp4(src_ip: [u8; 4], dst_ip: [u8; 4], src_port: u16, dst_port: u16, content: &[u8]) -> ChkSumUdp4Result<u16> {
     let src_port = src_port.to_be_bytes();
     let dst_port = dst_port.to_be_bytes();
 
     // length includes the length of the udp header
     if 8 + content.len() > 0xFFFF {
-        return Err(()); // it is impossible to make a UDP packet of length > 65535
+        return Err(ChkSumUdp4Error); // it is impossible to make a UDP packet of length > 65535
     }
     let length = ((8 + content.len()) as u16).to_be_bytes();
 

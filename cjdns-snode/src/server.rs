@@ -108,7 +108,7 @@ fn print_entity(e: &cjdns_ann::Entity) -> String {
     }
 }
 fn print_entities(it: Vec<&cjdns_ann::Entity>) -> String {
-    it.iter().map(|e| print_entity(&e)).collect::<Vec<String>>().join(", ")
+    it.iter().map(|e| print_entity(e)).collect::<Vec<String>>().join(", ")
 }
 
 struct Server {
@@ -191,7 +191,7 @@ impl Server {
                 if maybe_debug_noisy.is_none() {
                     debug_noisy = if let Some(dn) = &state.debug_node { dn.eq(&ann.node_ip) } else { false };
                 }
-                state.self_node.as_ref().map(|n| n.clone())
+                state.self_node.as_ref().cloned()
             };
             node = self.nodes.by_ip(&ann.node_ip);
             if log_enabled!(log::Level::Debug) && debug_noisy {
@@ -237,13 +237,11 @@ impl Server {
                     trace!("clock skew {}ms", clock_skew.as_millis());
                 }
             }
-        } else {
-            if let (Some(self_node), Some(ann)) = (self_node, ann_opt.as_ref()) {
-                if ann.node_ip == self_node.ipv6 {
-                    warn!("announcement received by gossip which is meant for us");
-                    reply_error = ReplyError::WrongSnode;
-                    ann_opt = None;
-                }
+        } else if let (Some(self_node), Some(ann)) = (self_node, ann_opt.as_ref()) {
+            if ann.node_ip == self_node.ipv6 {
+                warn!("announcement received by gossip which is meant for us");
+                reply_error = ReplyError::WrongSnode;
+                ann_opt = None;
             }
         }
 
@@ -339,11 +337,7 @@ impl Server {
                     if stored_link.peer_num != new_link.peer_num {
                         continue 'link;
                     }
-                    if stored_link.label != new_link.label {
-                        // nothing
-                    } else if stored_link.encoding_form_number != new_link.encoding_form_number {
-                        // nothing
-                    } else {
+                    if stored_link.label == new_link.label && stored_link.encoding_form_number == new_link.encoding_form_number {
                         // only small changes (if any)
                         let mut stored_link_state = stored_link.mut_state.lock();
                         let new_link_state = new_link.mut_state.lock();
@@ -374,7 +368,7 @@ impl Server {
             self.peers.add_ann(ann.hash.clone(), ann.binary.clone()).await;
         }
 
-        return Ok((hash::node_announcement_hash(Some(node), debug_noisy), reply_error));
+        Ok((hash::node_announcement_hash(Some(node), debug_noisy), reply_error))
     }
 
     fn add_announcement(&self, node: Arc<Node>, ann: &Announcement, debug_noisy: bool) {
@@ -414,12 +408,10 @@ impl Server {
                     if debug_noisy {
                         debug!("Keeping ann [{}] because it was announced just now", utils::ann_id(a));
                     }
-                } else {
-                    if debug_noisy {
-                        debug!("Keeping ann [{}] for entities [{}]", utils::ann_id(a), print_entities(justifications));
-                    }
+                } else if debug_noisy {
+                    debug!("Keeping ann [{}] for entities [{}]", utils::ann_id(a), print_entities(justifications));
                 }
-                return true;
+                true
             } else {
                 if debug_noisy {
                     debug!(
@@ -429,7 +421,7 @@ impl Server {
                     );
                 }
                 drop_announce.push(a.clone());
-                return false;
+                false
             }
         });
 

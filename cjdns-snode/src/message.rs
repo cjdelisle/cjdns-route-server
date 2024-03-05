@@ -14,6 +14,7 @@ pub struct Message(pub u64, pub MessageData);
 
 #[allow(non_camel_case_types)] // To keep naming consistent with JS code
 #[derive(Clone, PartialEq, Eq, Debug)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum MessageData {
     HELLO(u64),
     OLLEH(u64),
@@ -76,14 +77,14 @@ impl Message {
     fn from_msgpack(msg: Value) -> Result<Self, DecodingError> {
         if let Value::Array(root_arr) = msg {
             let n = root_arr.len();
-            if n < 2 || n > 4 {
+            if !(2..=4).contains(&n) {
                 return Err(DecodingError::BadMessageRootArrayLength(n));
             }
             let id = root_arr[0].as_u64().ok_or(DecodingError::BadIdFieldType)?;
             let data = MessageData::from_msgpack(&root_arr[1..])?;
             Ok(Message(id, data))
         } else {
-            return Err(DecodingError::BadMessageRootType);
+            Err(DecodingError::BadMessageRootType)
         }
     }
 
@@ -113,14 +114,14 @@ impl MessageData {
             ("ACK", None, None, None) => MessageData::ACK,
             ("GET_DATA", None, Some(hashes), None) if hashes.len() == 1 => MessageData::GET_DATA(hashes[0].clone()),
             ("DATA", None, None, Some(data)) => MessageData::DATA(data.clone()),
-            ("INV", Some(0), Some(hashes), None) => MessageData::INV(hashes.iter().cloned().collect()),
+            ("INV", Some(0), Some(hashes), None) => MessageData::INV(hashes.to_vec()),
             _ => return None,
         };
         Some(res)
     }
 
     fn from_msgpack(msg_data: &[Value]) -> Result<Self, DecodingError> {
-        debug_assert!(msg_data.len() >= 1 && msg_data.len() <= 4); // checked by the caller
+        debug_assert!(!msg_data.is_empty() && msg_data.len() <= 4); // checked by the caller
         let type_str = if let Value::String(s) = &msg_data[0] {
             s.as_str().ok_or(DecodingError::BadTypeFieldType)?
         } else {
@@ -163,12 +164,12 @@ impl MessageData {
             "GET_DATA" => {
                 check_data_len(1)?;
                 if let Value::Binary(hash) = &data[0] {
-                    if hash.len() > 0 {
+                    if !hash.is_empty() {
                         // Hash str can't be empty
                         return Ok(MessageData::GET_DATA(AnnHash(hash.clone())));
                     }
                 }
-                return Err(DecodingError::BadArgType(type_str.to_string()));
+                Err(DecodingError::BadArgType(type_str.to_string()))
             }
 
             "DATA" => {
@@ -196,7 +197,7 @@ impl MessageData {
                     .iter()
                     .map(|val| {
                         if let Value::Binary(hash) = val {
-                            if hash.len() > 0 {
+                            if !hash.is_empty() {
                                 Ok(AnnHash(hash.clone()))
                             } else {
                                 Err(DecodingError::BadArgType(type_str.to_string()))

@@ -61,19 +61,19 @@ mod encoding_serialization {
                 return Err(EncodingSerializationError::BadEncodingForm);
             }
 
-            if bit_count < 1 || bit_count > 31 {
+            if !(1..=31).contains(&bit_count) {
                 return Err(EncodingSerializationError::BadEncodingForm);
             }
 
             if prefix_len > 0 {
-                acc = acc | prefix as u64;
+                acc |= prefix as u64;
             }
 
-            acc = acc << 5;
-            acc = acc | bit_count as u64;
+            acc <<= 5;
+            acc |= bit_count as u64;
 
-            acc = acc << 5;
-            acc = acc | prefix_len as u64;
+            acc <<= 5;
+            acc |= prefix_len as u64;
 
             let bits_needed = 5 + 5 + prefix_len;
 
@@ -81,16 +81,16 @@ mod encoding_serialization {
                 if pos % 8 == 0 {
                     // start to work with new byte on each 8-th bit (alloc new byte in result_vec)
                     result_vec.push(0);
-                    cur_byte_num = cur_byte_num + 1;
+                    cur_byte_num += 1;
                     cur_bit_num = 0;
                 }
                 let mask = 1 << cur_bit_num;
                 if (acc % 2) == 1 {
-                    result_vec[cur_byte_num - 1] = result_vec[cur_byte_num - 1] | mask;
+                    result_vec[cur_byte_num - 1] |= mask;
                 }
-                acc = acc >> 1;
-                cur_bit_num = cur_bit_num + 1;
-                pos = pos + 1;
+                acc >>= 1;
+                cur_bit_num += 1;
+                pos += 1;
             }
 
             assert_eq!(acc, 0);
@@ -111,13 +111,13 @@ mod encoding_serialization {
         let mut cur_pos = (scheme_bytes.len() * 8) as u32;
 
         loop {
-            cur_pos = cur_pos - 5;
+            cur_pos -= 5;
             let prefix_len = read_bits(scheme_bytes, cur_pos, 5);
 
-            cur_pos = cur_pos - 5;
+            cur_pos -= 5;
             let bit_count = read_bits(scheme_bytes, cur_pos, 5);
 
-            cur_pos = cur_pos - prefix_len;
+            cur_pos -= prefix_len;
 
             // if prefix_len == 0 we simply read 0 bits from current position, receiving prefix = 0
             let prefix = read_bits(scheme_bytes, cur_pos, prefix_len as u8);
@@ -151,19 +151,19 @@ mod encoding_serialization {
 
             // 0000...1...0000, where "1" is on position corresponding to current bit
             let byte_mask = 128 >> cur_bit_num;
-            acc = acc << 1;
+            acc <<= 1;
 
             // taking current byte by `cur_byte_num` index from end of `data`
             let cur_byte = data[data.len() - 1 - cur_byte_num as usize];
             if (cur_byte & byte_mask) == 0 {
                 // if bit is 0 -> AND with "111111...11110"
-                acc = acc & (!1);
+                acc &= !1;
             } else {
                 // if bit is 1 -> OR with "00000...000001"
-                acc = acc | 1;
+                acc |= 1;
             }
-            pos = pos + 1;
-            bits_left = bits_left - 1;
+            pos += 1;
+            bits_left -= 1;
         }
         acc
     }
@@ -376,7 +376,7 @@ mod encoding_scheme {
         ///
         /// Returns an error if forms validation failed. See `validate` function docs for more info.
         pub fn try_new(forms: &[EncodingSchemeForm]) -> Result<Self, SchemeValidationError> {
-            let _ = Self::validate(forms)?;
+            Self::validate(forms)?;
             Ok(Self(forms.to_vec()))
         }
 
@@ -395,7 +395,7 @@ mod encoding_scheme {
             // each form must have a different prefix_len and bit_count;
             // can only be expressed in 5 bits limiting it to 31 bits max and a form
             // using zero bits is not allowed so there are only 31 max possibilities.
-            if forms.len() == 0 || forms.len() > 31 {
+            if forms.is_empty() || forms.len() > 31 {
                 return Err(SchemeValidationError::InvalidFormsAmount);
             }
 

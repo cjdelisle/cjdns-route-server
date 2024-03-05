@@ -27,6 +27,7 @@ use self::peer_list::PeerList;
 
 mod ann_list;
 mod info;
+#[allow(clippy::module_inception)]
 mod peer;
 mod peer_list;
 mod ping;

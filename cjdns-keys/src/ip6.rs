@@ -37,9 +37,8 @@ impl TryFrom<&CJDNSPublicKey> for CJDNS_IP6 {
     type Error = KeyCreationError;
 
     fn try_from(value: &CJDNSPublicKey) -> Result<Self> {
-        let pub_key_double_hash = hash(&hash(&value).0);
-        let ip6_res = Self::try_from(&pub_key_double_hash[..IP6_BYTES_SIZE]);
-        ip6_res
+        let pub_key_double_hash = hash(&hash(value).0);
+        Self::try_from(&pub_key_double_hash[..IP6_BYTES_SIZE])
     }
 }
 
@@ -62,7 +61,7 @@ impl TryFrom<&str> for CJDNS_IP6 {
 
     fn try_from(value: &str) -> Result<Self> {
         if IP6_RE.is_match(value) {
-            let ip6_joined = value.split(":").collect::<String>();
+            let ip6_joined = value.split(':').collect::<String>();
             let ip6_bytes = hex::decode(ip6_joined).expect("invalid hex string");
             return Ok(CJDNS_IP6 { k: vec_to_array16(ip6_bytes) });
         }
