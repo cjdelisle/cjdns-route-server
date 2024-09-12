@@ -100,7 +100,7 @@ pub trait Payload: DeserializeOwned {}
 impl<T: Serialize> Args for T {}
 
 // Blanket `Payload` impl for any deserializable type with `Default`.
-impl<T: DeserializeOwned + Default> Payload for T {}
+impl<T: DeserializeOwned> Payload for T {}
 
 /// Empty payload or arguments.
 #[derive(Deserialize, Serialize, Default, Clone, PartialEq, Eq, Debug)]
