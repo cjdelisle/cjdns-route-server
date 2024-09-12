@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "cjdns-crypto",
     "cjdns-core",
     "cjdns-keys",
     "cjdns-bencode",

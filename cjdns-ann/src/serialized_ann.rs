@@ -155,7 +155,7 @@ pub mod serialized_data {
                 };
                 let sign = crypto::sign::sign_detached(&header_data_to_sign, &sodium_sk);
                 join(sign.as_ref(), &header_data_to_sign)
-            };
+            }
 
             let packet = AnnouncementPacket::try_new(create_signed_header()).expect("invalid packet data len");
             assert!(packet.check().is_ok());

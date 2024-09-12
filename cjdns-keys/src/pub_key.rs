@@ -5,12 +5,13 @@ use std::ops::Deref;
 
 use data_encoding::BASE32_DNSCURVE;
 use regex::Regex;
-use sodiumoxide::crypto::scalarmult;
+
+use cjdns_crypto::scalarmult;
 
 use crate::{
-    errors::{KeyCreationError, Result},
-    utils::vec_to_array32,
     CJDNSPrivateKey,
+    errors::{KeyCreationError, Result},
+    utils::{debug_fmt, vec_to_array32},
 };
 
 lazy_static! {
@@ -21,7 +22,7 @@ lazy_static! {
 const BASE32_ENCODED_STRING_LEN: usize = 52;
 
 /// CJDNS public key type
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CJDNSPublicKey {
     k: [u8; 32],
 }
@@ -67,8 +68,24 @@ impl Deref for CJDNSPublicKey {
 }
 
 impl std::fmt::Display for CJDNSPublicKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", BASE32_DNSCURVE.encode(&self.k) + ".k")
+    }
+}
+
+impl std::fmt::Debug for CJDNSPublicKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        debug_fmt(self.k, f)
+    }
+}
+
+impl CJDNSPublicKey {
+    pub fn is_zero(&self) -> bool {
+        self.k == [0; 32]
+    }
+
+    pub fn raw(&self) -> &[u8; Self::SIZE] {
+        &self.k
     }
 }
 
@@ -114,5 +131,13 @@ mod tests {
         assert_eq!(&*pub_key, &pub_key_bytes);
         assert_eq!(CJDNSPublicKey::from(pub_key_bytes), pub_key);
         assert_eq!(pub_key.to_string(), "xpr2z2s3hnr0qzpk2u121uqjv15dc335v54pccqlqj6c5p840yy0.k".to_string());
+    }
+
+    #[test]
+    fn test_zero_pub_key() {
+        let zeroes = [0_u8; 32];
+        let zero = CJDNSPublicKey::from(zeroes);
+        assert!(zero.is_zero());
+        assert!(!pub_key("xpr2z2s3hnr0qzpk2u121uqjv15dc335v54pccqlqj6c5p840yy0.k").is_zero());
     }
 }
