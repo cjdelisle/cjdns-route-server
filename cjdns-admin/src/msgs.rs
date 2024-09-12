@@ -84,7 +84,7 @@ mod internal {
         #[serde(rename = "error", default)]
         pub(crate) error: String,
 
-        #[serde(flatten, default)]
+        #[serde(flatten)]
         #[serde(bound(deserialize = "P: DeserializeOwned"))]
         pub(crate) payload: P,
     }
@@ -94,7 +94,7 @@ mod internal {
 pub trait Args: Serialize {}
 
 /// Trait for RPC query return value. Can be any deserializable type with `Default`.
-pub trait Payload: DeserializeOwned + Default {}
+pub trait Payload: DeserializeOwned {}
 
 // Blanket `Args` impl for any serializable type.
 impl<T: Serialize> Args for T {}
