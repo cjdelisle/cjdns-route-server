@@ -128,6 +128,16 @@ mod reader {
         }
     }
 
+    impl<'a> std::io::Read for Reader<'a> {
+        fn read(&mut self, mut buf: &mut [u8]) -> std::io::Result<usize> {
+            if buf.len() > self.len() {
+                buf = &mut buf[0..self.len()]
+            }
+            buf.copy_from_slice(self.read_slice(buf.len()).unwrap());
+            Ok(buf.len())
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;

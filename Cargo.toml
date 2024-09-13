@@ -13,6 +13,7 @@ members = [
     "cjdns-sniff",
     "cjdns-snode",
     "netchecksum",
+    "cjdns-nameserver",
 ]
 
 [workspace.dependencies]
@@ -42,6 +43,9 @@ chrono = "0.4"
 num_enum = "0.7"
 data-encoding = "2.3"
 strum = { version = "0.26", features = ["derive"] }
+byteorder = "1.5"
+base64 = "0.21"
+trust-dns-resolver = "0.23.2"
 
 cjdns-admin = { path = "cjdns-admin" }
 cjdns-ann = { path = "cjdns-ann" }

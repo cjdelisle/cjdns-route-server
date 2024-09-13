@@ -162,4 +162,3 @@ pub use serialized_ann::serialized_data::AnnouncementPacket;
 mod errors;
 mod models;
 mod serialized_ann;
-mod var_int;

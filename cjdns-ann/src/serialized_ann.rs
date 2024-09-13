@@ -233,11 +233,10 @@ mod parser {
 
     use libsodium_sys::crypto_sign_ed25519_pk_to_curve25519;
 
-    use cjdns_bytes::{ExpectedSize, Reader};
+    use cjdns_bytes::{readext::ReadExt, ExpectedSize, Reader};
     use serialized_data::AnnouncementPacket;
 
     use crate::models::{AnnHash, LinkStateData, PeerData, LINK_STATE_SLOTS};
-    use crate::var_int::read_var_int;
 
     use super::*;
 
@@ -437,8 +436,8 @@ mod parser {
                 return Err(EntityParserError::BadData("non zero pad"));
             }
         }
-        let node_id = read_var_int::<u16>(&mut data_reader).map_err(|_| EntityParserError::BadData("can't create node id from received bytes"))?;
-        let slots_start_idx = read_var_int::<u8>(&mut data_reader).map_err(|_| EntityParserError::BadData("can't create slots idx from received bytes"))?;
+        let node_id: u16 = data_reader.read_var_int().map_err(|_| EntityParserError::BadData("can't create node id from received bytes"))?;
+        let slots_start_idx: u8 = data_reader.read_var_int().map_err(|_| EntityParserError::BadData("can't create slots idx from received bytes"))?;
         if slots_start_idx as usize >= STATE_SLOTS_SIZE {
             return Err(EntityParserError::BadData("slots index out of bounds"));
         }
@@ -453,11 +452,11 @@ mod parser {
         let mut i = slots_start_idx as usize;
         while !data_reader.is_empty() {
             lag_slots[i] =
-                Some(read_var_int::<u16>(&mut data_reader).map_err(|_| EntityParserError::BadData("can't create log_slots sample from received bytes"))?);
+                Some(data_reader.read_var_int().map_err(|_| EntityParserError::BadData("can't create log_slots sample from received bytes"))?);
             drop_slots[i] =
-                Some(read_var_int::<u16>(&mut data_reader).map_err(|_| EntityParserError::BadData("can't create drop_slots sample from received bytes"))?);
+                Some(data_reader.read_var_int().map_err(|_| EntityParserError::BadData("can't create drop_slots sample from received bytes"))?);
             kb_recv_slots[i] =
-                Some(read_var_int::<u32>(&mut data_reader).map_err(|_| EntityParserError::BadData("cant create kb_recv_slots sample from received bytes"))?);
+                Some(data_reader.read_var_int().map_err(|_| EntityParserError::BadData("cant create kb_recv_slots sample from received bytes"))?);
             i = (i + 1) % STATE_SLOTS_SIZE;
         }
         Ok(Entity::LinkState(LinkStateData {

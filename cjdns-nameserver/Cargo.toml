@@ -1,0 +1,15 @@
+[package]
+name = "cjdns-nameserver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { workspace = true }
+anyhow = { workspace = true}
+rand = { workspace = true }
+hex = { workspace = true }
+trust-dns-resolver = { workspace = true }
+base64 = { workspace = true }
+
+cjdns-keys = { workspace = true }
+cjdns-bytes = { workspace = true }

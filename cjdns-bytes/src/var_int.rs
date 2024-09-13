@@ -5,10 +5,11 @@ use std::convert::TryFrom;
 use std::mem;
 
 use thiserror::Error;
+use byteorder::{ReadBytesExt,WriteBytesExt,BE};
 
-use cjdns_bytes::{ExpectedSize, Reader};
+use crate::message::RWrite;
 
-pub(crate) trait VarInt: Sized + TryFrom<u8> + TryFrom<u16> + TryFrom<u32> + TryFrom<u64> {}
+pub trait VarInt: Sized + TryFrom<u8> + TryFrom<u16> + TryFrom<u32> + TryFrom<u64> {}
 
 impl VarInt for u8 {}
 impl VarInt for u16 {}
@@ -16,7 +17,7 @@ impl VarInt for u32 {}
 impl VarInt for u64 {}
 
 #[derive(Error, Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum VarIntError {
+pub enum VarIntError {
     #[error("Can't read varint: at least 1 byte expected")]
     UnexpectedEndOfData,
 
@@ -28,13 +29,13 @@ pub(crate) enum VarIntError {
 }
 
 /// C impl https://github.com/cjdelisle/cjdns/blob/d832e26951a2af083b4defb576fe1f0beeef6327/util/VarInt.h#L65
-pub(crate) fn read_var_int<T: VarInt>(reader: &mut Reader) -> Result<T, VarIntError> {
+pub fn read_var_int<T: VarInt>(reader: &mut impl std::io::Read) -> Result<T, VarIntError> {
     let byte = reader.read_u8().map_err(|_| VarIntError::UnexpectedEndOfData)?;
     match byte {
         // Marker byte `0xFF` following 64-bit integer
         0xff => {
             let value = reader
-                .read(ExpectedSize::NotLessThan(8), |r| r.read_u64_be())
+                .read_u64::<BE>()
                 .map_err(|_| VarIntError::MalformedEncoding(8, byte))?;
             <T as TryFrom<u64>>::try_from(value).map_err(|_| VarIntError::ValueTooBig(value, mem::size_of::<T>() * 8, 64))
         }
@@ -42,7 +43,7 @@ pub(crate) fn read_var_int<T: VarInt>(reader: &mut Reader) -> Result<T, VarIntEr
         // Marker byte `0xFE` following 32-bit integer
         0xfe => {
             let value = reader
-                .read(ExpectedSize::NotLessThan(4), |r| r.read_u32_be())
+                .read_u32::<BE>()
                 .map_err(|_| VarIntError::MalformedEncoding(4, byte))?;
             <T as TryFrom<u32>>::try_from(value).map_err(|_| VarIntError::ValueTooBig(value as u64, mem::size_of::<T>() * 8, 32))
         }
@@ -50,7 +51,7 @@ pub(crate) fn read_var_int<T: VarInt>(reader: &mut Reader) -> Result<T, VarIntEr
         // Marker byte `0xFD` following 16-bit integer
         0xfd => {
             let value = reader
-                .read(ExpectedSize::NotLessThan(2), |r| r.read_u16_be())
+                .read_u16::<BE>()
                 .map_err(|_| VarIntError::MalformedEncoding(2, byte))?;
             <T as TryFrom<u16>>::try_from(value).map_err(|_| VarIntError::ValueTooBig(value as u64, mem::size_of::<T>() * 8, 16))
         }
@@ -60,8 +61,27 @@ pub(crate) fn read_var_int<T: VarInt>(reader: &mut Reader) -> Result<T, VarIntEr
     }
 }
 
+pub fn write_var_int<T: Into<u64>>(t: T, w: &mut impl RWrite) -> std::io::Result<()> {
+    let t = t.into();
+    if t > u32::MAX as _ {
+        w.write_u64::<BE>(t)?;
+        w.write_u8(0xff)?;
+    } else if t > u16::MAX as _ {
+        w.write_u32::<BE>(t as _)?;
+        w.write_u8(0xfe)?;
+    } else if t > 0xfc as _ {
+        w.write_u16::<BE>(t as _)?;
+        w.write_u8(0xfd)?;
+    } else {
+        w.write_u8(t as _)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io::BufReader;
+
     use super::*;
 
     fn decode_hex(hex: &str) -> Vec<u8> {
@@ -71,7 +91,7 @@ mod tests {
     #[test]
     fn test_exact_size_match() {
         let buf = decode_hex("01fd0203fe04050607ff08090a0b0c0d0e0f");
-        let mut reader = Reader::new(&buf);
+        let mut reader = BufReader::new(&buf[..]);
         assert_eq!(read_var_int::<u8>(&mut reader), Ok(1));
         assert_eq!(read_var_int::<u16>(&mut reader), Ok(0x0203));
         assert_eq!(read_var_int::<u32>(&mut reader), Ok(0x04050607));
@@ -82,7 +102,7 @@ mod tests {
     #[test]
     fn test_bigger_size() {
         let buf = decode_hex("01020304");
-        let mut reader = Reader::new(&buf);
+        let mut reader = BufReader::new(&buf[..]);
         assert_eq!(read_var_int::<u8>(&mut reader), Ok(1));
         assert_eq!(read_var_int::<u16>(&mut reader), Ok(2));
         assert_eq!(read_var_int::<u32>(&mut reader), Ok(3));
@@ -92,7 +112,7 @@ mod tests {
     #[test]
     fn test_error_value_too_big() {
         let buf = decode_hex("fd0203fe04050607ff08090a0b0c0d0e0f");
-        let mut reader = Reader::new(&buf);
+        let mut reader = BufReader::new(&buf[..]);
         assert_eq!(read_var_int::<u8>(&mut reader), Err(VarIntError::ValueTooBig(0x0203, 8, 16)));
         assert_eq!(read_var_int::<u16>(&mut reader), Err(VarIntError::ValueTooBig(0x04050607, 16, 32)));
         assert_eq!(read_var_int::<u32>(&mut reader), Err(VarIntError::ValueTooBig(0x08090a0b0c0d0e0f, 32, 64)));
@@ -101,7 +121,7 @@ mod tests {
     #[test]
     fn test_error_bad_encoding() {
         let buf = decode_hex("ff11223344556677");
-        let mut reader = Reader::new(&buf);
+        let mut reader = BufReader::new(&buf[..]);
         assert_eq!(read_var_int::<u64>(&mut reader), Err(VarIntError::MalformedEncoding(8, 0xFF)));
     }
 }
