@@ -14,3 +14,4 @@ parking_lot = "0.11"
 # Use customized sodiumoxide which fixes Windows build bugs
 sodiumoxide = { workspace = true }
 libsodium-sys = { workspace = true }
+ed25519 = { workspace = true }

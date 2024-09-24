@@ -4,6 +4,7 @@
 pub use sodiumoxide::crypto::hash;
 pub use sodiumoxide::crypto::scalarmult;
 pub use sodiumoxide::crypto::sign;
+pub use ed25519;
 
 pub mod sign_ext {
     use libsodium_sys::crypto_sign_ed25519_pk_to_curve25519;

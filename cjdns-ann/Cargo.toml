@@ -16,3 +16,4 @@ thiserror = { workspace = true }
 cjdns-bytes = { workspace = true }
 cjdns-core = { workspace = true }
 cjdns-keys = { workspace = true }
+cjdns-crypto = { workspace = true }

@@ -1,7 +1,10 @@
 use std::convert::TryFrom;
 
-use sodiumoxide::crypto::hash::sha512;
-use sodiumoxide::crypto::sign::ed25519::{verify_detached, PublicKey, Signature};
+use cjdns_crypto::{
+    hash::sha512,
+    sign::ed25519::{verify_detached, PublicKey},
+    ed25519::Signature,
+};
 
 use cjdns_core::{deserialize_scheme, RoutingLabel};
 use cjdns_keys::{CJDNSPublicKey, CJDNS_IP6};
