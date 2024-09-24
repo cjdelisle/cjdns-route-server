@@ -21,6 +21,28 @@ pub struct PeeringLine {
     pub password: String,
 }
 
+pub struct PeerID {
+    pub id: Vec<u8>,
+}
+impl PeerID {
+    pub fn encode(&self, w: &mut impl RWrite) -> Result<()> {
+        if self.id.len() > 64 {
+            bail!("Invalid PeerID, max length 64");
+        }
+        let len0 = w.len();
+        w.write_all(&self.id)?;
+        let len = w.len() - len0 + 2;
+        w.write_u8(len as _)?;
+        w.write_u8(PEER_ID)?;
+        Ok(())
+    }
+    pub fn decode(r: &mut impl Read) -> Result<Self> {
+        let mut id = Vec::new();
+        r.read_to_end(&mut id)?;
+        Ok(Self{id})
+    }
+}
+
 #[derive(Debug,PartialEq)]
 pub struct CjdnsPeer {
     pub address: SocketAddr,
@@ -108,6 +130,7 @@ impl CjdnsPeer {
 pub const SNODE: u8 = 0x01;
 pub const UDP4_PEER: u8 = 0x02;
 pub const UDP6_PEER: u8 = 0x03;
+pub const PEER_ID: u8 = 0x04;
 
 #[derive(Default,Debug,PartialEq)]
 pub struct CjdnsTxtRecord {
