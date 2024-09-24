@@ -21,6 +21,7 @@ pub struct PeeringLine {
     pub password: String,
 }
 
+#[derive(Default,Debug,PartialEq)]
 pub struct PeerID {
     pub id: Vec<u8>,
 }
@@ -135,21 +136,37 @@ pub const PEER_ID: u8 = 0x04;
 #[derive(Default,Debug,PartialEq)]
 pub struct CjdnsTxtRecord {
     pub peers: Vec<CjdnsPeer>,
-    pub snode_pubkey: [u8;32],
+    pub snode_pubkey: Option<[u8;32]>,
+    pub peer_id: Option<PeerID>,
     pub unknown_records: Vec<(u8,Vec<u8>)>
 }
 impl CjdnsTxtRecord {
     fn parse_snode(&mut self, data: &mut impl Read) -> Result<()> {
-        data.read_exact(&mut self.snode_pubkey)?;
+        let mut snode = [0_u8;32];
+        data.read_exact(&mut snode)?;
+        self.snode_pubkey = Some(snode);
         Ok(())
     }
     fn write_snode(&self, data: &mut impl RWrite) -> Result<()> {
-        data.write_all(&self.snode_pubkey)?;
-        data.write_all(&[SNODE,(self.snode_pubkey.len() + 2) as u8])?;
+        if let Some(snode) = &self.snode_pubkey {
+            data.write_all(snode)?;
+            data.write_all(&[SNODE,(snode.len() + 2) as u8])?;
+        }
+        Ok(())
+    }
+    fn parse_peerid(&mut self, data: &mut impl Read) -> Result<()> {
+        self.peer_id = Some(PeerID::decode(data)?);
+        Ok(())
+    }
+    fn write_peerid(&self, data: &mut impl RWrite) -> Result<()> {
+        if let Some(pid) = &self.peer_id {
+            pid.encode(data)?
+        }
         Ok(())
     }
     fn from_tlv(&mut self, t: u8, mut data: &[u8]) -> Result<()> {
         match t {
+            PEER_ID => self.parse_peerid(&mut data)?,
             SNODE => self.parse_snode(&mut data)?,
             UDP4_PEER | UDP6_PEER => {
                 self.peers.push(CjdnsPeer::decode(t, &mut data)?);
@@ -160,11 +177,25 @@ impl CjdnsTxtRecord {
     }
     pub fn encode(&self) -> Result<String> {
         let mut data = Message::with_chunk_size(512);
-        for p in self.peers.iter().rev() {
-            p.encode(&mut data)?;
-        }
-        self.write_snode(&mut data)?;
+        self.encode_bin(&mut data)?;
         Ok(String::new() + "cjdns0=" + &STANDARD_NO_PAD.encode(data.as_vec()))
+    }
+
+    pub fn encode_bin(&self, data: &mut impl RWrite) -> Result<()> {
+        for p in self.peers.iter().rev() {
+            p.encode(data)?;
+        }
+        self.write_snode(data)?;
+        self.write_peerid(data)?;
+        Ok(())
+    }
+
+    pub fn decode_bin(bytes: &[u8]) -> Result<Self> {
+        let mut out = Self::default();
+        for (t, elem) in parse_tlv(bytes)? {
+            out.from_tlv(t, elem)?;
+        }
+        Ok(out)
     }
 
     pub fn decode(s: &str) -> Result<Self> {
@@ -175,11 +206,7 @@ impl CjdnsTxtRecord {
         };
         let bytes =
             STANDARD_NO_PAD.decode(s).context("Could not decode base64")?;
-        let mut out = Self::default();
-        for (t, elem) in parse_tlv(&bytes)? {
-            out.from_tlv(t, elem)?;
-        }
-        Ok(out)
+        Self::decode_bin(&bytes)
     }
 }
 
@@ -208,6 +235,8 @@ mod tests {
     use rand::{rngs::ThreadRng, Rng};
     use crate::dnsseed::{CjdnsPeer, CjdnsTxtRecord};
 
+    use super::PeerID;
+
     fn random_peer(rng: &mut ThreadRng) -> CjdnsPeer {
         let address = if true {
             SocketAddr::new(
@@ -235,6 +264,11 @@ mod tests {
             peers: (0..3).map(|_|random_peer(&mut rng)).collect(),
             snode_pubkey: rng.gen(),
             unknown_records: Vec::new(),
+            peer_id: if rng.gen() {
+                Some(PeerID{ id: rng.gen::<[u8;32]>().into() })
+            } else {
+                None
+            }
         }
     }
 

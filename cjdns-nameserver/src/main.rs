@@ -135,8 +135,9 @@ fn main() -> Result<()> {
             decoded_peers.push(p);
         }
         let ctr = CjdnsTxtRecord{
-            snode_pubkey: snode.raw().clone(),
+            snode_pubkey: Some(snode.raw().clone()),
             peers: decoded_peers,
+            peer_id: None,
             unknown_records: Vec::new(),
         };
         println!("TXT {}", ctr.encode()?);
@@ -151,8 +152,8 @@ fn main() -> Result<()> {
         let ctr = CjdnsTxtRecord::decode(&txt)
             .with_context(||format!("Unable to decode seed TXT record {txt}"))?;
 
-        let snode = CJDNSPublicKey::from(ctr.snode_pubkey.clone());
-        if !snode.is_zero() {
+        if let Some(snode) = &ctr.snode_pubkey {
+            let snode = CJDNSPublicKey::from(snode.clone());
             println!("Snode: {}", snode.to_string());
         }
         if !ctr.peers.is_empty() {
