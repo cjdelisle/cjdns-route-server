@@ -1,0 +1,17 @@
+[package]
+name = "cjdns"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+cjdns-admin = { workspace = true }
+cjdns-ann = { workspace = true }
+cjdns-bencode = { workspace = true }
+cjdns-bytes = { workspace = true }
+cjdns-crypto = { workspace = true }
+cjdns-core = { workspace = true }
+cjdns-ctrl = { workspace = true }
+cjdns-hdr = { workspace = true }
+cjdns-keys = { workspace = true }
+cjdns-sniff = { workspace = true }
+netchecksum = { workspace = true }

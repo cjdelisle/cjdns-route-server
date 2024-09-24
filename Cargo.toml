@@ -14,6 +14,7 @@ members = [
     "cjdns-snode",
     "netchecksum",
     "cjdns-nameserver",
+    "cjdns",
 ]
 
 [workspace.dependencies]
@@ -52,6 +53,7 @@ cjdns-ann = { path = "cjdns-ann" }
 cjdns-bencode = { path = "cjdns-bencode" }
 cjdns-bytes = { path = "cjdns-bytes" }
 cjdns-core = { path = "cjdns-core" }
+cjdns-crypto = { path = "cjdns-crypto" }
 cjdns-ctrl = { path = "cjdns-ctrl" }
 cjdns-hdr = { path = "cjdns-hdr" }
 cjdns-keys = { path = "cjdns-keys" }

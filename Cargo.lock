@@ -212,6 +212,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cjdns"
+version = "0.1.0"
+dependencies = [
+ "cjdns-admin",
+ "cjdns-ann",
+ "cjdns-bencode",
+ "cjdns-bytes",
+ "cjdns-core",
+ "cjdns-crypto",
+ "cjdns-ctrl",
+ "cjdns-hdr",
+ "cjdns-keys",
+ "cjdns-sniff",
+ "netchecksum",
+]
+
+[[package]]
 name = "cjdns-admin"
 version = "0.1.0"
 dependencies = [
