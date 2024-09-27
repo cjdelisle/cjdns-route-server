@@ -179,8 +179,8 @@ impl Connection {
         let socket = self.socket.lock().await;
         socket.send(&msg).await.map_err(|e| Error::NetworkOperation(e))?;
 
-        // Limit receive packet lenght to typical Ethernet MTU for now; need to check actual max packet length on CJDNS Node side though.
-        let mut buf = [0; 1500];
+        // MTU of loopback
+        let mut buf = [0; 65535];
 
         // Reseive encoded response synchronously
         let received = socket.recv(&mut buf).await.map_err(|e| Error::NetworkOperation(e))?;
