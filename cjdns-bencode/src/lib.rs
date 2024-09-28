@@ -4,6 +4,8 @@ pub use bendy::serde::from_bytes;
 pub use bendy::serde::to_bytes;
 pub use bendy::serde::Error;
 
+pub use bendy;
+
 pub use crate::value::{BValue, BencodeError};
 
 mod value;
