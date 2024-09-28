@@ -14,10 +14,24 @@ pub struct BValue(BendyValue<'static>);
 
 pub struct BValueBuilder(Option<BendyValue<'static>>);
 
+impl From<BendyValue<'static>> for BValue {
+    fn from(value: BendyValue<'static>) -> Self {
+        Self(value)
+    }
+}
+
 impl BValue {
     /// Create new `BValue` using builder.
     pub fn builder() -> BValueBuilder {
         BValueBuilder(None)
+    }
+
+    pub fn inner(&self) -> &BendyValue<'static> {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> BendyValue<'static> {
+        self.0
     }
 
     /// Create `BValue` from bencoded data bytes.
