@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::Error;
 use anyhow::Result;
+use cjdns_hdr::RouteHeader;
 use futures::future::try_join_all;
 use http::Uri;
 use parking_lot::Mutex;
@@ -66,7 +67,10 @@ pub async fn main(config: Config, opts: crate::args::Opts) -> Result<()> {
         let server = Arc::clone(&server);
         let h = task::spawn(async move {
             while let Some(ann) = announces.recv().await {
-                server.handle_announce(ann, false).await;
+                let res = server.handle_announce_impl(ann, None, None).await;
+                if let Err(err) = res {
+                    warn!("Bad announcement from snode: {}", err);
+                }
             }
         });
         tasks.push(h);
@@ -167,14 +171,7 @@ const MAX_GLOBAL_CLOCKSKEW: Duration = Duration::from_secs(60 * 60 * 20);
 const GLOBAL_TIMEOUT: Duration = Duration::from_secs(MAX_GLOBAL_CLOCKSKEW.as_secs() + AGREED_TIMEOUT.as_secs());
 
 impl Server {
-    async fn handle_announce(&self, announce: AnnData, from_node: bool) {
-        let res = self.handle_announce_impl(announce, from_node, None).await;
-        if let Err(err) = res {
-            warn!("Bad announcement: {}", err);
-        }
-    }
-
-    async fn handle_announce_impl(&self, announce: Vec<u8>, from_node: bool, maybe_debug_noisy: Option<bool>) -> Result<(AnnHash, ReplyError), Error> {
+    async fn handle_announce_impl(&self, announce: Vec<u8>, source: Option<&RouteHeader>, maybe_debug_noisy: Option<bool>) -> Result<(AnnHash, ReplyError), Error> {
         let mut reply_error = ReplyError::None;
 
         let mut ann_opt = None;
@@ -218,18 +215,19 @@ impl Server {
         if let (Some(node), Some(ann)) = (node.as_ref(), ann_opt.as_ref()) {
             let node_mut = node.mut_state.read();
             let ann_timestamp = mktime(ann.header.timestamp);
-            if from_node && node_mut.timestamp > ann_timestamp {
+            if source.is_some() && node_mut.timestamp > ann_timestamp {
                 warn!("old timestamp");
                 reply_error = ReplyError::OldMessage;
                 ann_opt = None;
             }
         }
 
-        if from_node {
+        if let Some(source) = source {
             let self_node = self_node.ok_or_else(|| anyhow!("no self_node"))?;
             if let Some(ann) = ann_opt.as_ref() {
                 if ann.header.snode_ip != self_node.ipv6 {
-                    warn!("announcement meant for other snode, we are {} got {}", self_node.ipv6, ann.header.snode_ip);
+                    warn!("announcement from {:?} meant for other snode, we are {} got {}",
+                        source.ip6, self_node.ipv6, ann.header.snode_ip);
                     reply_error = ReplyError::WrongSnode;
                     ann_opt = None;
                 }
@@ -247,7 +245,9 @@ impl Server {
         } else {
             if let (Some(self_node), Some(ann)) = (self_node, ann_opt.as_ref()) {
                 if ann.node_ip == self_node.ipv6 {
-                    warn!("announcement received by gossip which is meant for us");
+                    warn!("announcement (origin {}) received by gossip which is meant for us",
+                        ann.node_ip
+                    );
                     reply_error = ReplyError::WrongSnode;
                     ann_opt = None;
                 }

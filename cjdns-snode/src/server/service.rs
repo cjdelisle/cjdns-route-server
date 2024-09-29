@@ -15,7 +15,6 @@ use cjdns_hdr::RouteHeader;
 use cjdns_keys::{CJDNSPublicKey, CJDNS_IP6};
 use cjdns_sniff::{Content, ContentType, Message, ReceiveError, Sniffer};
 
-use crate::seeder::PeerInfoProvider;
 use crate::server::route::get_route;
 use crate::server::service::core_node_info::try_parse_encoding_scheme;
 use crate::server::Server;
@@ -299,7 +298,7 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
         "ann" if content_benc.has_dict_entry("ann") => {
             let ann = content_benc.get_dict_value_bytes("ann").expect("benc 'ann' entry"); // Safe because of the check above
 
-            let (state_hash, reply_err) = server.handle_announce_impl(ann, true, Some(debug_noisy)).await?;
+            let (state_hash, reply_err) = server.handle_announce_impl(ann, Some(&route_header), Some(debug_noisy)).await?;
             if debug_noisy {
                 debug!("reply: {:?}", hex::encode(state_hash.bytes()));
             }
