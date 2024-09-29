@@ -1,5 +1,9 @@
 //! Info about connections to peer supernodes
 
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+
 use crate::peer::{Peer, PeerList, Peers};
 
 pub struct PeersInfo {
@@ -8,11 +12,11 @@ pub struct PeersInfo {
     pub ann_by_hash_len: usize,
 }
 
+#[derive(Serialize,Deserialize)]
 pub struct PeerInfo {
     pub addr: String,
     pub outstanding_requests: usize,
-    pub msgs_on_wire: usize,
-    pub msg_queue: usize,
+    pub time_since_msg: Duration,
 }
 
 impl Peers {
@@ -34,11 +38,14 @@ impl PeerList {
 
 impl Peer {
     fn info(&self) -> PeerInfo {
+        let now = std::time::Instant::now();
+        let lmt = *self.last_msg_time.read();
+        let since = now - lmt;
+
         PeerInfo {
             addr: self.addr.clone(),
             outstanding_requests: self.get_outstanding_reqs_count(),
-            msgs_on_wire: 0, //TODO No such concept in rust code - ask CJ what to do with it, remove or keep 0 for compatibility?
-            msg_queue: 0,    //TODO originally "self.msg_queue.len()", not easy to get in Rust code - is it really needed, or can be dropped?
+            time_since_msg: since,
         }
     }
 }

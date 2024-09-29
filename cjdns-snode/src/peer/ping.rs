@@ -17,6 +17,7 @@ impl Peers {
     }
 
     async fn do_pings(&self) {
+        debug!("do_pings()");
         let (ping_list, drop_list) = self.peers.get_timed_out_peers(Self::DROP_AFTER, Self::PING_AFTER);
 
         // Ping stale peers

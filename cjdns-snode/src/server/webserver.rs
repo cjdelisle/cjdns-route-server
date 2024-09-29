@@ -221,12 +221,7 @@ mod handlers {
         let reply = json! {{
             "peer": json!{{
                 "peers": peers_info.peers.into_iter().map(|pi| {
-                    json!{{
-                        "addr": pi.addr,
-                        "outstandingRequests": pi.outstanding_requests,
-                        "msgsOnWire": pi.msgs_on_wire,
-                        "msgQueue": pi.msg_queue,
-                    }}
+                    serde_json::to_value(pi).unwrap()
                 }).collect::<Vec<_>>(),
                 "announcements": peers_info.announcements,
                 "annByHashLen": peers_info.ann_by_hash_len,
@@ -332,12 +327,7 @@ mod handlers {
             "totalWithRsts": nodes_info.total_ann + nodes_info.resets,
             "peerInfo": json!{{
                 "peers": peers_info.peers.into_iter().map(|pi| {
-                    json!{{
-                        "addr": pi.addr,
-                        "outstandingRequests": pi.outstanding_requests,
-                        "msgsOnWire": pi.msgs_on_wire,
-                        "msgQueue": pi.msg_queue,
-                    }}
+                    serde_json::to_value(pi).unwrap()
                 }).collect::<Vec<_>>(),
                 "announcements": peers_info.announcements,
                 "annByHashLen": peers_info.ann_by_hash_len,
