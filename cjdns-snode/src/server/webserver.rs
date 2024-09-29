@@ -4,9 +4,10 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection, Reply};
 
-use crate::server::Server;
+use crate::{seeder::SeederTestRes, server::Server};
 
 pub(super) async fn test_srv_task(server: Arc<Server>) {
     let routes = api(server).recover(handlers::rejection);
@@ -25,6 +26,8 @@ fn api(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejecti
     let ws = ws_route(server.clone());
 
     info.or(debug_node).or(dump).or(path).or(ni).or(walk).or(ws)
+        .or(seeder_peers(server.clone()))
+        .or(seeder_testres(server.clone()))
 }
 
 fn info_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
@@ -72,6 +75,27 @@ fn walk_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = 
     warp::path::path("walk").and(with_server(server)).and_then(handlers::handle_walk)
 }
 
+#[derive(Serialize,Deserialize)]
+pub struct SeederQuery {
+    pub passwd: String,
+}
+
+fn seeder_peers(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::path::path("seeder-peers")
+        .and(warp::get())
+        .and(with_server(server))
+        .and(warp::query::<SeederQuery>())
+        .and_then(handlers::handle_seeder_peers)
+}
+
+fn seeder_testres(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+    warp::path::path("seeder-testres")
+        .and(warp::post())
+        .and(with_server(server))
+        .and(warp::body::json::<SeederTestRes>())
+        .and_then(handlers::handle_seeder_testres)
+}
+
 fn ws_route(server: Arc<Server>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
     warp::path::path("cjdnsnode_websocket")
         .and(warp::addr::remote())
@@ -108,10 +132,12 @@ mod handlers {
     use cjdns_core::{EncodingScheme, RoutingLabel};
     use cjdns_keys::CJDNS_IP6;
 
+    use crate::seeder::SeederTestRes;
     use crate::server::{route::get_route, Server};
     use crate::utils::timestamp::make_timestamp;
 
     use super::node_info::nodes_info;
+    use super::SeederQuery;
 
     use self::warp_pretty_print_json_reply::reply_json;
 
@@ -319,6 +345,31 @@ mod handlers {
         }};
 
         return Ok(reply_json(&reply));
+    }
+
+    pub(super) async fn handle_seeder_peers(server: Arc<Server>, q: SeederQuery) -> Result<impl Reply, Infallible> {
+        match server.seeder.list_peers(&q.passwd, &server).await {
+            Ok(res) => {
+                Ok(reply_json(&json!({
+                    "error": serde_json::Value::Null,
+                    "res": res,
+                })))
+            }
+            Err(e) => {
+                Ok(reply_json(&json!({ "error": e.to_string() })))
+            }
+        }
+    }
+
+    pub(super) async fn handle_seeder_testres(server: Arc<Server>, post: SeederTestRes) -> Result<impl Reply, Infallible> {
+        match server.seeder.testres(post).await {
+            Ok(()) => {
+                Ok(reply_json(&json!({ "error": serde_json::Value::Null })))
+            }
+            Err(e) => {
+                Ok(reply_json(&json!({ "error": e.to_string() })))
+            }
+        }
     }
 
     pub(super) async fn handle_walk(server: Arc<Server>) -> Result<impl Reply, Infallible> {

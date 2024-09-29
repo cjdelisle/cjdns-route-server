@@ -107,12 +107,23 @@ mod config {
     }
 
     #[derive(Clone, Default, PartialEq, Eq, Debug, Deserialize)]
+    pub struct SeederConfig {
+        pub tester_passwds: Vec<String>,
+        pub nameserver_passwds: Vec<String>,
+        // After this number, nolonger recommend node for peering
+        pub max_connection_count: usize,
+        pub share_peers_with_nameserver: usize,
+    }
+
+    #[derive(Clone, Default, PartialEq, Eq, Debug, Deserialize)]
     pub struct Config {
         #[serde(rename = "connectCjdns")]
         pub connect: bool,
 
         #[serde(rename = "peers")]
         pub peers: Vec<String>,
+
+        pub seeder: SeederConfig,
     }
 }
 
@@ -121,3 +132,4 @@ mod pathsearch;
 mod peer;
 mod server;
 mod utils;
+mod seeder;

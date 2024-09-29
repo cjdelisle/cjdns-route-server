@@ -4,6 +4,7 @@ use std::io::Read;
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use byteorder::{ReadBytesExt,WriteBytesExt,BE};
+use serde::{Deserialize, Serialize};
 
 use crate::message::{Message, RWrite};
 use crate::var_int::{read_var_int, write_var_int};
@@ -14,14 +15,16 @@ pub struct AuthorizedPassword {
     pub user: String,
 }
 
+#[derive(Serialize,Deserialize)]
 pub struct PeeringLine {
     pub address: String,
     pub public_key: String,
     pub login: String,
     pub password: String,
+    pub version: u32,
 }
 
-#[derive(Default,Debug,PartialEq)]
+#[derive(Default,Debug,PartialEq,Clone)]
 pub struct PeerID {
     pub id: Vec<u8>,
 }
@@ -44,7 +47,7 @@ impl PeerID {
     }
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug,PartialEq,Clone)]
 pub struct CjdnsPeer {
     pub address: SocketAddr,
     pub pubkey: [u8;32],
@@ -59,6 +62,7 @@ impl CjdnsPeer {
             public_key: cjdns_keys::CJDNSPublicKey::from(self.pubkey.clone()).to_string(),
             login: self.mk_login(),
             password: self.mk_pass(),
+            version: self.version,
         }
     }
 

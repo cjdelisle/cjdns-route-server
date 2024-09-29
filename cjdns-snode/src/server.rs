@@ -17,6 +17,7 @@ use cjdns_keys::CJDNS_IP6;
 
 use crate::config::Config;
 use crate::peer::{create_peers, AnnData, Peers};
+use crate::seeder::{PeerInfoProvider, Seeder};
 use crate::server::link::{mk_link, Link, LinkStateEntry};
 use crate::server::nodes::{Node, Nodes};
 use crate::server::route::Routing;
@@ -39,10 +40,12 @@ pub async fn main(config: Config, opts: crate::args::Opts) -> Result<()> {
     // Background tasks we are going to spawn
     let mut tasks = Vec::new();
 
+    let config = Arc::new(config);
+
     // The server context instance
     let (peers, mut announces) = create_peers();
     let peers = Arc::new(peers);
-    let server = Arc::new(Server::new(Arc::clone(&peers), opts.use_old_compute_routing_label_impl));
+    let server = Arc::new(Server::new(Arc::clone(&config), Arc::clone(&peers), opts.use_old_compute_routing_label_impl));
 
     // Run timeout task
     {
@@ -115,6 +118,8 @@ struct Server {
     peers: Arc<Peers>,
     nodes: Nodes,
     mut_state: Mutex<ServerMut>,
+    config: Arc<Config>,
+    seeder: Seeder,
     use_old_compute_routing_label_impl: bool,
 }
 
@@ -138,8 +143,10 @@ enum ReplyError {
 }
 
 impl Server {
-    fn new(peers: Arc<Peers>, use_old_compute_routing_label_impl: bool) -> Self {
+    fn new(config: Arc<Config>, peers: Arc<Peers>, use_old_compute_routing_label_impl: bool) -> Self {
         Server {
+            seeder: Seeder::new(Arc::clone(&config)),
+            config,
             peers: peers.clone(),
             nodes: Nodes::new(peers),
             mut_state: Mutex::new(ServerMut {
@@ -527,6 +534,25 @@ impl Server {
                 }
             }
         }
+    }
+}
+
+impl<'a> PeerInfoProvider for &'a Arc<Server> {
+    fn peer_info(&self, node: &CJDNS_IP6, reference_peer: Option<&CJDNS_IP6>) -> (usize, bool) {
+        let n = match self.nodes.by_ip(node) {
+            Some(x) => x,
+            None => {
+                return (usize::MAX, false)
+            }
+        };
+        let ilp = n.inward_links_by_ip.lock();
+        let count = ilp.len();
+        let por = if let Some(rp) = reference_peer {
+            ilp.iter().find(|(p,_)|*p == rp).is_some()
+        } else {
+            false
+        };
+        (count, por)
     }
 }
 

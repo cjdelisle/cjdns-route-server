@@ -278,6 +278,7 @@ dependencies = [
  "cjdns-keys",
  "hex",
  "rand 0.7.3",
+ "serde",
  "thiserror",
 ]
 
@@ -394,6 +395,7 @@ dependencies = [
  "lazy_static",
  "log",
  "parking_lot 0.12.1",
+ "rand 0.7.3",
  "regex",
  "rmpv",
  "serde",

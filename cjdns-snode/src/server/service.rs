@@ -15,6 +15,7 @@ use cjdns_hdr::RouteHeader;
 use cjdns_keys::{CJDNSPublicKey, CJDNS_IP6};
 use cjdns_sniff::{Content, ContentType, Message, ReceiveError, Sniffer};
 
+use crate::seeder::PeerInfoProvider;
 use crate::server::route::get_route;
 use crate::server::service::core_node_info::try_parse_encoding_scheme;
 use crate::server::Server;
@@ -337,6 +338,34 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
             }
 
             Some((res.build(), version))
+        }
+
+        "pc" if content_benc.has_dict_entry("pc") => {
+            if debug_noisy {
+                debug!("pc");
+            }
+            let pc = content_benc.get_dict_value_bytes("pc").expect("benc 'pc' entry"); // Safe because of the check above
+            let ip6 = route_header.ip6.as_ref().ok_or_else(||anyhow!("No IP6"))?;
+            let res = match server.seeder.post_credentials(ip6, &pc, &server).await {
+                Ok(r) => {
+                    BValue::builder()
+                        .set_dict()
+                        .add_dict_entry_opt("txid", txid)
+                        .add_dict_entry("pr", |b| b.set_bytes(r))
+                        .build()
+                },
+                Err(e) => {
+                    debug!("Error in Seeder::post_credentials() from [{ip6}]: {e}");
+                    let mut es = e.to_string();
+                    es.truncate(128);
+                    BValue::builder()
+                        .set_dict()
+                        .add_dict_entry_opt("txid", txid)
+                        .add_dict_entry("err", |b| b.set_bytes(es.into_bytes()))
+                        .build()
+                }
+            };
+            Some((res, version))
         }
 
         _ => {
