@@ -15,9 +15,9 @@ byteorder = { workspace = true }
 anyhow = { workspace = true }
 base64 = { workspace = true }
 serde = { workspace = true }
+hex = { workspace = true }
 
 cjdns-keys = { workspace = true }
 
 [dev-dependencies]
-hex = { workspace = true }
 rand = { workspace = true }

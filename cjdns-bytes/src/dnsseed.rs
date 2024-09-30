@@ -46,6 +46,16 @@ impl PeerID {
         Ok(Self{id})
     }
 }
+impl ToString for PeerID {
+    fn to_string(&self) -> String {
+        match String::from_utf8(self.id.clone()) {
+            Ok(s) => s,
+            Err(_) => {
+                format!("hex({})", hex::encode(&self.id))
+            }
+        }
+    }
+}
 
 #[derive(Debug,PartialEq,Clone)]
 pub struct CjdnsPeer {

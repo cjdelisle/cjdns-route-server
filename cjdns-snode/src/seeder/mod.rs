@@ -61,6 +61,7 @@ pub struct SeederListPeer {
     pub ring: u32,
     pub status: PeerStatus,
     pub peer: PeeringLine,
+    pub id: String,
 }
 impl From<&SeederPeer> for SeederListPeer {
     fn from(x: &SeederPeer) -> Self {
@@ -69,7 +70,8 @@ impl From<&SeederPeer> for SeederListPeer {
             last_report_sec: x.last_report_sec,
             ring: x.ring,
             status: x.status,
-            peer: x.creds.peering_line()
+            peer: x.creds.peering_line(),
+            id: x.peer_id.to_string()
         }
     }
 }
