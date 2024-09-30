@@ -71,7 +71,7 @@ impl From<&SeederPeer> for SeederListPeer {
             ring: x.ring,
             status: x.status,
             peer: x.creds.peering_line(),
-            id: x.peer_id.to_string()
+            id: x.peer_id.to_string(),
         }
     }
 }
