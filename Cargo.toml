@@ -16,6 +16,8 @@ members = [
     "cjdns-nameserver",
     "cjdns",
     "cjdns-ptest",
+    "cjdns-snode-wire",
+    "cjdns-util",
 ]
 
 [workspace.dependencies]
@@ -63,3 +65,5 @@ cjdns-hdr = { path = "cjdns-hdr" }
 cjdns-keys = { path = "cjdns-keys" }
 cjdns-sniff = { path = "cjdns-sniff" }
 netchecksum = { path = "netchecksum" }
+cjdns-snode-wire = { path = "cjdns-snode-wire" }
+cjdns-util = { path = "cjdns-util" }

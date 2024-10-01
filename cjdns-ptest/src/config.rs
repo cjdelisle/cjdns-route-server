@@ -16,9 +16,10 @@ pub struct CjdnsAdminConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PtestConfig {
-    pub retest_after_minutes: u32,
-    pub parallel_tests: u32,
+    pub retest_after_minutes: u64,
+    pub parallel_tests: usize,
     pub snode: SnodeConfig,
+    pub require_snode: Option<String>,
     pub cjdns_admin: CjdnsAdminConfig,
 }
 

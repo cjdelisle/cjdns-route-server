@@ -8,3 +8,11 @@ serde = { workspace = true }
 serde_yaml = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+
+cjdns-snode-wire = { workspace = true }
+cjdns-util = { workspace = true }
+cjdns-admin = { workspace = true }
+cjdns-keys = { workspace = true }
+cjdns-bytes = { workspace = true }

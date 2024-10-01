@@ -4,10 +4,11 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use cjdns_snode_wire::SeederTestRes;
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection, Reply};
 
-use crate::{seeder::SeederTestRes, server::Server};
+use crate::server::Server;
 
 pub(super) async fn test_srv_task(server: Arc<Server>) {
     let routes = api(server).recover(handlers::rejection);
@@ -122,6 +123,7 @@ mod handlers {
     use std::convert::{Infallible, TryFrom};
     use std::sync::Arc;
 
+    use cjdns_snode_wire::SeederTestRes;
     use serde_json::json;
     use serde_json::Value as JsonValue;
     use thiserror::Error;
@@ -132,7 +134,6 @@ mod handlers {
     use cjdns_core::{EncodingScheme, RoutingLabel};
     use cjdns_keys::CJDNS_IP6;
 
-    use crate::seeder::SeederTestRes;
     use crate::server::{route::get_route, Server};
     use crate::utils::timestamp::make_timestamp;
 
@@ -337,27 +338,30 @@ mod handlers {
         return Ok(reply_json(&reply));
     }
 
-    pub(super) async fn handle_seeder_peers(server: Arc<Server>, q: SeederQuery) -> Result<impl Reply, Infallible> {
+    pub(super) async fn handle_seeder_peers(server: Arc<Server>, q: SeederQuery) -> Result<Box<dyn Reply>, Infallible> {
         match server.seeder.list_peers(&q.passwd, &server).await {
             Ok(res) => {
-                Ok(reply_json(&json!({
-                    "error": serde_json::Value::Null,
-                    "res": res,
-                })))
+                Ok(Box::new(reply_json(&res)))
             }
             Err(e) => {
-                Ok(reply_json(&json!({ "error": e.to_string() })))
+                Ok(Box::new(warp::reply::with_status(
+                    e.to_string(),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )))
             }
         }
     }
 
-    pub(super) async fn handle_seeder_testres(server: Arc<Server>, post: SeederTestRes) -> Result<impl Reply, Infallible> {
+    pub(super) async fn handle_seeder_testres(server: Arc<Server>, post: SeederTestRes) -> Result<Box<dyn Reply>, Infallible> {
         match server.seeder.testres(post).await {
             Ok(()) => {
-                Ok(reply_json(&json!({ "error": serde_json::Value::Null })))
+                Ok(Box::new(reply_json(&json!({}))))
             }
             Err(e) => {
-                Ok(reply_json(&json!({ "error": e.to_string() })))
+                Ok(Box::new(warp::reply::with_status(
+                    e.to_string(),
+                    warp::http::StatusCode::BAD_REQUEST,
+                )))
             }
         }
     }

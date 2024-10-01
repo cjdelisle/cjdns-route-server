@@ -1,29 +1,23 @@
-use std::{convert::TryFrom, net::SocketAddr, sync::Arc};
+use std::{convert::TryFrom, sync::Arc};
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use cjdns_snode_wire::{SeederListPeer, SeederTestRes};
+use cjdns_util::now_sec;
 use tokio::sync::Mutex;
 use rand::Rng;
 
-use crate::{config::Config, now_sec};
-use cjdns_bytes::{dnsseed::{CjdnsPeer, CjdnsTxtRecord, PeerID, PeeringLine}, message::Message};
+use crate::config::Config;
+use cjdns_bytes::{dnsseed::{CjdnsPeer, CjdnsTxtRecord, PeerID}, message::Message};
 use cjdns_keys::{PublicKey, CJDNS_IP6};
 
 const NUM_PEERS_TO_RESPOND: usize = 6;
-
-#[derive(Serialize,Deserialize,Clone,Copy,PartialEq)]
-pub enum PeerStatus {
-    Unknown,
-    Down,
-    Up,
-}
 
 struct SeederPeer {
     ip: CJDNS_IP6,
     peer_id: PeerID,
     creds: CjdnsPeer,
     ring: u32,
-    status: PeerStatus,
+    check_error: Option<String>,
     private: bool,
     last_check_sec: u64,
     last_report_sec: u64,
@@ -41,35 +35,13 @@ struct SeederMut {
     top_ring: u32,
 }
 
-#[derive(Serialize,Deserialize)]
-pub struct SeederTestResNode {
-    addr: SocketAddr,
-    ip6: String,
-    works: bool,
-}
-
-#[derive(Serialize,Deserialize)]
-pub struct SeederTestRes {
-    pub passwd: String,
-    pub nodes: Vec<SeederTestResNode>,
-}
-
-#[derive(Serialize,Deserialize)]
-pub struct SeederListPeer {
-    pub last_check_sec: u64,
-    pub last_report_sec: u64,
-    pub ring: u32,
-    pub status: PeerStatus,
-    pub peer: PeeringLine,
-    pub id: String,
-}
 impl From<&SeederPeer> for SeederListPeer {
     fn from(x: &SeederPeer) -> Self {
         Self {
             last_check_sec: x.last_check_sec,
             last_report_sec: x.last_report_sec,
             ring: x.ring,
-            status: x.status,
+            check_error: x.check_error.clone(),
             peer: x.creds.peering_line(),
             id: x.peer_id.to_string(),
         }
@@ -121,7 +93,8 @@ impl Seeder {
             if ent.peer_id != peer_id || creds != creds {
                 ent.peer_id = peer_id;
                 ent.creds = creds;
-                ent.status = PeerStatus::Unknown;
+                ent.check_error = None;
+                ent.last_check_sec = 0;
             }
             ent.last_report_sec = now_s;
             ent.ring
@@ -133,7 +106,7 @@ impl Seeder {
                 ip: sender.clone(),
                 creds,
                 ring,
-                status: PeerStatus::Unknown,
+                check_error: None,
                 last_check_sec: 0,
                 last_report_sec: now_s,
             });
@@ -223,10 +196,15 @@ impl Seeder {
         } else if !self.config.seeder.nameserver_passwds.contains(passwd) {
             bail!("Unknown password");
         }
+        let last_check_cutoff = now_sec() - 60*60;
         // Get the number worst working peers to give to the nameserver
         let m = self.m.lock().await;
         let mut ok_peers = m.peers.iter().enumerate()
-            .filter(|(_,p)|!p.private && p.status == PeerStatus::Up)
+            .filter(|(_,p)|{
+                !p.private &&
+                p.check_error.is_none() &&
+                p.last_check_sec > last_check_cutoff
+            })
             .map(|(i,p)|(i,p.ring))
             .collect::<Vec<_>>();
         ok_peers.sort_by_key(|(_,r)|u32::MAX - r);
@@ -256,11 +234,7 @@ impl Seeder {
             if let Some(sp) = m.peers.iter_mut()
                 .find(|sp|sp.creds.address == p.addr && sp.ip == ip6)
             {
-                sp.status = if p.works {
-                    PeerStatus::Up
-                } else {
-                    PeerStatus::Down
-                };
+                sp.check_error = p.error;
                 sp.last_check_sec = now_s;
             }
         }

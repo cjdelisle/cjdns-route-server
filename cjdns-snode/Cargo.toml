@@ -38,6 +38,8 @@ cjdns-core = { workspace = true }
 cjdns-hdr = { workspace = true }
 cjdns-keys = { workspace = true }
 cjdns-sniff = { workspace = true }
+cjdns-snode-wire = { workspace = true }
+cjdns-util = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }

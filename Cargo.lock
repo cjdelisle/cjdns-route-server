@@ -364,6 +364,13 @@ dependencies = [
 name = "cjdns-ptest"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "cjdns-admin",
+ "cjdns-bytes",
+ "cjdns-keys",
+ "cjdns-snode-wire",
+ "cjdns-util",
+ "log",
  "reqwest",
  "serde",
  "serde_yaml",
@@ -403,6 +410,8 @@ dependencies = [
  "cjdns-hdr",
  "cjdns-keys",
  "cjdns-sniff",
+ "cjdns-snode-wire",
+ "cjdns-util",
  "clap",
  "env_logger",
  "futures",
@@ -423,6 +432,18 @@ dependencies = [
  "tokio-tungstenite 0.21.0",
  "warp",
 ]
+
+[[package]]
+name = "cjdns-snode-wire"
+version = "0.1.0"
+dependencies = [
+ "cjdns-bytes",
+ "serde",
+]
+
+[[package]]
+name = "cjdns-util"
+version = "0.1.0"
 
 [[package]]
 name = "clap"

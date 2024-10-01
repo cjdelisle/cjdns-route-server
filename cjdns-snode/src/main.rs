@@ -20,8 +20,8 @@ extern crate lazy_static;
 extern crate log;
 
 use anyhow::Result;
+use cjdns_util::now_sec;
 use std::io::Write;
-use std::time::SystemTime;
 
 /// Program entry point.
 #[tokio::main]
@@ -29,10 +29,6 @@ async fn main() {
     if let Err(e) = run().await {
         error!("Error: {:#}", e);
     }
-}
-
-fn now_sec() -> u64 {
-    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
 }
 
 /// Main function.

@@ -1,0 +1,9 @@
+[package]
+name = "cjdns-snode-wire"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+
+cjdns-bytes = { workspace = true }
