@@ -370,6 +370,7 @@ dependencies = [
  "cjdns-keys",
  "cjdns-snode-wire",
  "cjdns-util",
+ "env_logger",
  "log",
  "reqwest",
  "serde",

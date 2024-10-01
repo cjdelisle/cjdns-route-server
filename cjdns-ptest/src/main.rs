@@ -1,8 +1,10 @@
 mod config;
 mod cjdns;
 
+use std::collections::VecDeque;
 use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
+use std::io::Write;
 
 use anyhow::{bail, Result};
 use cjdns_keys::{PublicKey, CJDNS_IP6};
@@ -69,6 +71,8 @@ impl TestAgent {
     async fn test(&mut self, peer: &SeederListPeer) -> Result<Status> {
         let id = self.id;
         let sa: SocketAddr = peer.peer.address.parse()?;
+        log::debug!("[{id}] [{sa}] Delete connections");
+        self.cjdns.remove_conns(Some(id)).await?;
         log::debug!("[{id}] [{sa}] Getting best iface");
         let iface = self.cjdns.get_best_iface(&sa).await?;
         log::debug!("[{id}] [{sa}] Getting peers");
@@ -76,7 +80,7 @@ impl TestAgent {
             bail!("Can't test peer {} because we are already connected", peer.peer.address);
         }
         log::debug!("[{id}] [{sa}] Starting connection");
-        self.cjdns.begin_conn(iface, &peer.peer).await?;
+        self.cjdns.begin_conn(iface, id, &peer.peer).await?;
         let mut i = 0;
         let mut first_seen = false;
         let pso = loop {
@@ -177,15 +181,26 @@ async fn main_loop_cycle(
     config: &Arc<Config>,
     send_task: &Sender<SeederListPeer>,
     recv_resp: &mut Receiver<(SeederListPeer,Status)>,
+    currently_testing: &mut VecDeque<(String,u64)>,
 ) -> Result<()> {
     log::debug!("[MAIN] loop getting nodes");
     let peers = fetch_snode_data(&config.ptest.snode).await?;
     let nows = now_sec();
+    while let Some((_, since)) = currently_testing.front() {
+        if *since > nows - 60*20 {
+            break;
+        }
+        currently_testing.pop_front();
+    }
     for peer in peers {
         if peer.last_check_sec + config.ptest.retest_after_minutes*60 > nows {
             continue;
         }
+        if currently_testing.iter().find(|(p,_)|p == &peer.peer.address).is_some() {
+            continue;
+        }
         log::debug!("[MAIN] Send {} for testing", peer.peer.address);
+        currently_testing.push_back((peer.peer.address.clone(), nows));
         send_task.send(peer).await?;
     }
 
@@ -219,10 +234,27 @@ async fn main_loop_cycle(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::Builder::from_default_env()
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} {} {}:{} {}",
+                now_sec(),
+                record.level(),
+                record.file().unwrap_or("?"),
+                record.line().unwrap_or(0),
+                record.args()
+            )
+        })
+        .init();
+
     // Load the configuration from a file
     let config = Arc::new(load_config("config.yaml").await?);
 
     let cjdns = Cjdns::new(&config.ptest.cjdns_admin).await?;
+
+    log::debug!("[MAIN] Delete all connections");
+    cjdns.remove_conns(None).await?;
 
     let (send_task, receiver) = channel(512);
     let receiver = Arc::new(Mutex::new(receiver));
@@ -241,8 +273,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Startup with {} parallel tasks", config.ptest.parallel_tests);
 
     // Main thread calls the snode
+    let mut currently_testing = VecDeque::new();
     loop {
-        match main_loop_cycle(&config, &send_task, &mut recv_resp).await {
+        match main_loop_cycle(&config, &send_task, &mut recv_resp, &mut currently_testing).await {
             Ok(()) => {
                 tokio::time::sleep(Duration::from_secs(20)).await;
             }

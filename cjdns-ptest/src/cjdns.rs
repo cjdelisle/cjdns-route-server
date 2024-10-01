@@ -8,6 +8,25 @@ use tokio::sync::Mutex;
 
 use crate::config::CjdnsAdminConfig;
 
+fn parse_address(address: &str) -> Result<(&str, &str)> {
+    if !address.starts_with('v') {
+        bail!("Address {address} must begin with 'v'");
+    }
+    let Some(dot0) = address.find('.') else {
+        bail!("Address {address} missing '.'");
+    };
+    if address.as_bytes().get(dot0 + 20) != Some(&b'.') {
+        // .0000.0000.0000.0001.
+        bail!("Address {address} find('.')+20 != '.'");
+    }
+    let path = &address[dot0+1..dot0+20];
+    if address.len() < 25 {
+        bail!("Address {address} too short");
+    }
+    let key = &address[dot0+21..];
+    Ok((path, key))
+}
+
 #[derive(Clone)]
 pub struct Cjdns {
     conn: Arc<Mutex<Connection>>,
@@ -38,19 +57,8 @@ impl Cjdns {
     pub async fn get_snode(&self, address: &str) -> Result<Option<String>> {
         // SwitchPinger_ping --path=0000.0000.0000.0013 --snode=1
 
-        if !address.starts_with('v') {
-            bail!("Address {address} must begin with 'v'");
-        }
-        let Some(dot0) = address.find('.') else {
-            bail!("Address {address} missing '.'");
-        };
-        if address.as_bytes().get(dot0 + 19) != Some(&b'.') {
-            // .0000.0000.0000.0001.
-            bail!("Address {address} find('.')+19 != '.'");
-        }
-        let path = &address[dot0+1..dot0+18];
-        println!("SwitchPinger_ping({path}, snode=1)");
-
+        let (path, _) = parse_address(address)?;
+        log::debug!("SwitchPinger_ping({path}, snode=1)");
         let reply: SwitchPingReply = self.conn.lock().await.invoke(
             "SwitchPinger_ping",
             ArgValues::new()
@@ -63,11 +71,12 @@ impl Cjdns {
         Ok(reply.snode)
     }
 
-    pub async fn begin_conn(&self, iface_num: i64, peer: &PeeringLine) -> Result<()> {
+    pub async fn begin_conn(&self, iface_num: i64, worker: usize, peer: &PeeringLine) -> Result<()> {
         // cjdnstool cexec UDPInterface_beginConnection --address=<String> --publicKey=<String>
         //     [--interfaceNumber=<Int>] [--login=<String>] [--password=<String>]
         //     [--peerName=<String>] [--version=<Int>]
         // Remote error will cause invoke() to fail.
+        log::debug!("UDPInterface_beginConnection({})", &peer.password);
         self.conn.lock().await.invoke(
             "UDPInterface_beginConnection",
             ArgValues::new()
@@ -76,9 +85,33 @@ impl Cjdns {
                 .add("interfaceNumber", iface_num)
                 .add("login", peer.login.clone())
                 .add("password", peer.password.clone())
-                .add("peerName", format!("TESTING/{}/{}", iface_num, peer.address))
+                .add("peerName", format!("TESTING/{}/{}", worker, peer.address))
                 .add("version", peer.version as i64),
         ).await?;
+        Ok(())
+    }
+
+    pub async fn remove_conns(&self, worker: Option<usize>) -> Result<()> {
+        let ps = self.peer_stats().await?;
+        let template = if let Some(worker) = worker {
+            format!("TESTING/{}/", worker)
+        } else {
+            "TESTING/".to_string()
+        };
+        for p in &ps {
+            let Some(user) = &p.user else {
+                continue;
+            };
+            if !user.starts_with(&template) {
+                continue;
+            }
+            let (_, key) = parse_address(&p.addr)?;
+            log::debug!("InterfaceController_disconnectPeer({})", key);
+            self.conn.lock().await.invoke(
+                "InterfaceController_disconnectPeer",
+                ArgValues::new().add("pubkey", key),
+            ).await?;
+        }
         Ok(())
     }
 
@@ -100,7 +133,7 @@ impl Cjdns {
             pub total: i64,
         }
         let mut out = Vec::new();
-        let page = 0;
+        let mut page = 0;
         loop {
             let ret: Ps = self.conn.lock().await.invoke(
                 "InterfaceController_peerStats",
@@ -108,6 +141,7 @@ impl Cjdns {
             ).await?;
             out.extend(ret.peers.into_iter());
             if ret.more == Some(1) {
+                page += 1;
                 continue;
             } else {
                 return Ok(out);
@@ -162,6 +196,8 @@ pub struct PeerStats {
     
     #[serde(rename = "state")]
     pub state: String,
+
+    pub user: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
@@ -191,7 +227,7 @@ async fn get_interfaces(cjdns: &Cjdns) -> Result<Vec<Interface>> {
         pub total: i64,
     }
     let mut out = Vec::new();
-    let page = 0;
+    let mut page = 0;
     loop {
         let ret: Interfaces = cjdns.conn.lock().await.invoke(
             "InterfaceController_interfaces",
@@ -199,6 +235,7 @@ async fn get_interfaces(cjdns: &Cjdns) -> Result<Vec<Interface>> {
         ).await?;
         out.extend(ret.ifaces.into_iter());
         if ret.more == Some(1) {
+            page += 1;
             continue;
         } else {
             return Ok(out);

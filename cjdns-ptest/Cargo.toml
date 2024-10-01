@@ -10,6 +10,7 @@ reqwest = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
+env_logger = { workspace = true }
 
 cjdns-snode-wire = { workspace = true }
 cjdns-util = { workspace = true }
