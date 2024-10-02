@@ -370,12 +370,15 @@ dependencies = [
  "cjdns-keys",
  "cjdns-snode-wire",
  "cjdns-util",
+ "cjdns-util-http",
  "env_logger",
  "log",
  "reqwest",
  "serde",
+ "serde_json",
  "serde_yaml",
  "tokio",
+ "warp",
 ]
 
 [[package]]
@@ -445,6 +448,16 @@ dependencies = [
 [[package]]
 name = "cjdns-util"
 version = "0.1.0"
+
+[[package]]
+name = "cjdns-util-http"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "warp",
+]
 
 [[package]]
 name = "clap"

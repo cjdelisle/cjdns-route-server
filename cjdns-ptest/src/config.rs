@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -21,6 +23,7 @@ pub struct PtestConfig {
     pub snode: SnodeConfig,
     pub require_snode: Option<String>,
     pub cjdns_admin: CjdnsAdminConfig,
+    pub http_bind: SocketAddr,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

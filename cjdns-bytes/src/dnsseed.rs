@@ -15,7 +15,7 @@ pub struct AuthorizedPassword {
     pub user: String,
 }
 
-#[derive(Serialize,Deserialize)]
+#[derive(Serialize,Deserialize,Clone)]
 pub struct PeeringLine {
     pub address: String,
     pub public_key: String,

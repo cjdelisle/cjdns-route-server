@@ -76,7 +76,7 @@ impl Cjdns {
         //     [--interfaceNumber=<Int>] [--login=<String>] [--password=<String>]
         //     [--peerName=<String>] [--version=<Int>]
         // Remote error will cause invoke() to fail.
-        log::debug!("UDPInterface_beginConnection({})", &peer.password);
+        log::debug!("UDPInterface_beginConnection({})", &peer.address);
         self.conn.lock().await.invoke(
             "UDPInterface_beginConnection",
             ArgValues::new()

@@ -6,14 +6,17 @@ edition = "2021"
 [dependencies]
 serde = { workspace = true }
 serde_yaml = { workspace = true }
+serde_json = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
+warp = { workspace = true }
 
 cjdns-snode-wire = { workspace = true }
 cjdns-util = { workspace = true }
 cjdns-admin = { workspace = true }
 cjdns-keys = { workspace = true }
 cjdns-bytes = { workspace = true }
+cjdns-util-http = { workspace = true }

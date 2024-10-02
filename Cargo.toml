@@ -18,6 +18,7 @@ members = [
     "cjdns-ptest",
     "cjdns-snode-wire",
     "cjdns-util",
+    "cjdns-util-http",
 ]
 
 [workspace.dependencies]
@@ -67,3 +68,4 @@ cjdns-sniff = { path = "cjdns-sniff" }
 netchecksum = { path = "netchecksum" }
 cjdns-snode-wire = { path = "cjdns-snode-wire" }
 cjdns-util = { path = "cjdns-util" }
+cjdns-util-http = { path = "cjdns-util-http" }

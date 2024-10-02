@@ -1,19 +1,22 @@
-[ptest]
-# If a node has not been tested in this number of minutes, test again
-retest_after_minutes: 20
+ptest:
+  # If a node has not been tested in this number of minutes, test again
+  retest_after_minutes: 20
 
-# Maximum number of tests to run at the same time.
-# Your cjdns node will make this number of outgoing connections.
-parallel_tests: 30
+  # Maximum number of tests to run at the same time.
+  # Your cjdns node will make this number of outgoing connections.
+  parallel_tests: 30
 
-# http connection to snode
-snode:
-  host: 'fca5:7fa7:5a3:9584:ef4a:15d0:c932:b6c0'
-  port: 3334
-  pass: 'the_password_goes_here'
+  # Bind to this port for providing public stats
+  http_bind: "127.0.0.1:9876"
 
-# cjdns admin udp connection
-cjdns_admin:
-  host: '127.0.0.1'
-  port: 11234
-  pass: 'NONE'
+  # http connection to snode
+  snode:
+    host: 'fca5:7fa7:5a3:9584:ef4a:15d0:c932:b6c0'
+    port: 3334
+    pass: 'the_password_goes_here'
+
+  # cjdns admin udp connection
+  cjdns_admin:
+    host: '127.0.0.1'
+    port: 11234
+    pass: 'NONE'

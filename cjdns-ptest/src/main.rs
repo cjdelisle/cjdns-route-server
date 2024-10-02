@@ -10,9 +10,12 @@ use anyhow::{bail, Result};
 use cjdns_keys::{PublicKey, CJDNS_IP6};
 use cjdns_snode_wire::{SeederListPeer, SeederTestRes, SeederTestResNode};
 use cjdns_util::now_sec;
+use cjdns_util_http::{json_reply, HttpReply};
 use reqwest::Error;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use warp::Filter;
 
 use crate::config::{Config,SnodeConfig};
 use crate::cjdns::Cjdns;
@@ -61,10 +64,7 @@ enum Status {
 }
 
 struct TestAgent {
-    cjdns: Cjdns,
-    config: Arc<Config>,
-    receiver: Arc<Mutex<Receiver<SeederListPeer>>>,
-    responder: Sender<(SeederListPeer,Status)>,
+    server: Arc<Server>,
     id: usize,
 }
 impl TestAgent {
@@ -72,21 +72,21 @@ impl TestAgent {
         let id = self.id;
         let sa: SocketAddr = peer.peer.address.parse()?;
         log::debug!("[{id}] [{sa}] Delete connections");
-        self.cjdns.remove_conns(Some(id)).await?;
+        self.server.cjdns.remove_conns(Some(id)).await?;
         log::debug!("[{id}] [{sa}] Getting best iface");
-        let iface = self.cjdns.get_best_iface(&sa).await?;
+        let iface = self.server.cjdns.get_best_iface(&sa).await?;
         log::debug!("[{id}] [{sa}] Getting peers");
-        if self.cjdns.peer_stats_of(&peer.peer.public_key).await?.is_some() {
+        if self.server.cjdns.peer_stats_of(&peer.peer.public_key).await?.is_some() {
             bail!("Can't test peer {} because we are already connected", peer.peer.address);
         }
         log::debug!("[{id}] [{sa}] Starting connection");
-        self.cjdns.begin_conn(iface, id, &peer.peer).await?;
+        self.server.cjdns.begin_conn(iface, id, &peer.peer).await?;
         let mut i = 0;
         let mut first_seen = false;
         let pso = loop {
             i += 1;
             tokio::time::sleep(Duration::from_secs(1)).await;
-            let pso = self.cjdns.peer_stats_of(&peer.peer.public_key).await?;
+            let pso = self.server.cjdns.peer_stats_of(&peer.peer.public_key).await?;
             let Some(pso) = pso else {
                 if i < 30 {
                     continue;
@@ -111,7 +111,7 @@ impl TestAgent {
         let snode = loop {
             i += 1;
             log::debug!("[{id}] [{sa}] Get snode attempt [{i}]");
-            match self.cjdns.get_snode(&pso.addr).await {
+            match self.server.cjdns.get_snode(&pso.addr).await {
                 Ok(res) => break res,
                 Err(e) => {
                     if i >= 5 {
@@ -125,7 +125,7 @@ impl TestAgent {
             }
         };
         if let Some(snode) = &snode {
-            if let Some(require_snode) = &self.config.ptest.require_snode {
+            if let Some(require_snode) = &self.server.config.ptest.require_snode {
                 if snode != require_snode {
                     log::debug!("[{id}] [{sa}] Wrong snode, want [{require_snode}] got [{snode}]");
                     return Ok(Status::WrongSnode);
@@ -144,7 +144,7 @@ impl TestAgent {
 
     async fn run(mut self) {
         loop {
-            let Some(msg) = self.receiver.lock().await.recv().await else {
+            let Some(msg) = self.server.receiver.lock().await.recv().await else {
                 log::info!("[{}] Recv got a None, shutting down", self.id);
                 return;
             };
@@ -153,6 +153,8 @@ impl TestAgent {
                 i += 1;
                 let res = tokio::select! {
                     res = self.test(&msg) => {
+                        // Attempt to remove all connections from this test
+                        let _ = self.server.cjdns.remove_conns(Some(self.id)).await;
                         match res {
                             Ok(Status::Ok) => break Status::Ok,
                             Ok(x) => x,
@@ -169,7 +171,7 @@ impl TestAgent {
                 }
                 tokio::time::sleep(Duration::from_secs(10)).await;
             };
-            if self.responder.send((msg,res)).await.is_err() {
+            if self.server.responder.send((msg,res)).await.is_err() {
                 log::info!("[{}] send() was an error, shutting down", self.id);
                 return;
             }
@@ -178,13 +180,14 @@ impl TestAgent {
 }
 
 async fn main_loop_cycle(
-    config: &Arc<Config>,
+    server: &Arc<Server>,
     send_task: &Sender<SeederListPeer>,
     recv_resp: &mut Receiver<(SeederListPeer,Status)>,
     currently_testing: &mut VecDeque<(String,u64)>,
 ) -> Result<()> {
     log::debug!("[MAIN] loop getting nodes");
-    let peers = fetch_snode_data(&config.ptest.snode).await?;
+    let peers = fetch_snode_data(&server.config.ptest.snode).await?;
+    *server.state.lock().await = peers.clone();
     let nows = now_sec();
     while let Some((_, since)) = currently_testing.front() {
         if *since > nows - 60*20 {
@@ -193,7 +196,7 @@ async fn main_loop_cycle(
         currently_testing.pop_front();
     }
     for peer in peers {
-        if peer.last_check_sec + config.ptest.retest_after_minutes*60 > nows {
+        if peer.last_check_sec + server.config.ptest.retest_after_minutes*60 > nows {
             continue;
         }
         if currently_testing.iter().find(|(p,_)|p == &peer.peer.address).is_some() {
@@ -224,12 +227,55 @@ async fn main_loop_cycle(
         return Ok(());
     }
     log::debug!("[MAIN] Posting back [{}] results", nodes.len());
-    post_snode_testres(&config.ptest.snode, &SeederTestRes{
-        passwd: config.ptest.snode.pass.clone(),
+    post_snode_testres(&server.config.ptest.snode, &SeederTestRes{
+        passwd: server.config.ptest.snode.pass.clone(),
         nodes,
     }).await?;
     log::debug!("[MAIN] Success");
     Ok(())
+}
+
+struct Server {
+    cjdns: Cjdns,
+    config: Config,
+    receiver: Mutex<Receiver<SeederListPeer>>,
+    responder: Sender<(SeederListPeer,Status)>,
+    state: Mutex<Vec<SeederListPeer>>,
+}
+
+#[derive(Serialize,Deserialize)]
+struct HttpStatusPeer {
+    last_check_sec: u64,
+    last_report_sec: u64,
+    ring: u32,
+    check_error: Option<String>,
+    public_key: String,
+    address: String,
+    peer_id: String,
+}
+
+async fn http_status(server: Arc<Server>) -> HttpReply {
+    let out = server.state.lock().await.iter().map(|p|HttpStatusPeer{
+        last_check_sec: p.last_check_sec,
+        last_report_sec: p.last_report_sec,
+        ring: p.ring,
+        check_error: p.check_error.clone(),
+        public_key: p.peer.public_key.clone(),
+        address: "REDACTED".into(),
+        peer_id: p.id.clone(),
+    }).collect::<Vec<_>>();
+    json_reply(out)
+}
+
+async fn httpd(server: Arc<Server>) {
+    let server1 = Arc::clone(&server);
+    let api = warp::path!("api" / "v1" / "status")
+        .and(warp::get())
+        .and(warp::any().map(move || server1.clone()))
+        .and_then(http_status);
+    
+    log::debug!("HTTP Server binding {}", server.config.ptest.http_bind);
+    warp::serve(api).run(server.config.ptest.http_bind).await;
 }
 
 #[tokio::main]
@@ -249,7 +295,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     // Load the configuration from a file
-    let config = Arc::new(load_config("config.yaml").await?);
+    let config = load_config("config.yaml").await?;
 
     let cjdns = Cjdns::new(&config.ptest.cjdns_admin).await?;
 
@@ -257,25 +303,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     cjdns.remove_conns(None).await?;
 
     let (send_task, receiver) = channel(512);
-    let receiver = Arc::new(Mutex::new(receiver));
-
     let (responder, mut recv_resp) = channel(512);
 
-    for id in 0..config.ptest.parallel_tests {
+    let server = Arc::new(Server{
+        cjdns,
+        config,
+        receiver: Mutex::new(receiver),
+        state: Default::default(),
+        responder,
+    });
+
+    for id in 0..server.config.ptest.parallel_tests {
         tokio::task::spawn(TestAgent{
             id,
-            cjdns: cjdns.clone(),
-            config: Arc::clone(&config),
-            receiver: Arc::clone(&receiver),
-            responder: responder.clone(),
+            server: Arc::clone(&server),
         }.run());
     }
-    log::info!("Startup with {} parallel tasks", config.ptest.parallel_tests);
+    log::info!("Startup with {} parallel tasks", server.config.ptest.parallel_tests);
+
+    tokio::task::spawn(httpd(Arc::clone(&server)));
 
     // Main thread calls the snode
     let mut currently_testing = VecDeque::new();
     loop {
-        match main_loop_cycle(&config, &send_task, &mut recv_resp, &mut currently_testing).await {
+        match main_loop_cycle(&server, &send_task, &mut recv_resp, &mut currently_testing).await {
             Ok(()) => {
                 tokio::time::sleep(Duration::from_secs(20)).await;
             }
