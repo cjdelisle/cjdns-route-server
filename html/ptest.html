@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CJDNS Nodes Status</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+        .ok {
+            color: green;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Cjdns Public Peer Status</h2>
+
+<table id="nodes-table">
+    <thead>
+        <p>
+            Cjdns nodes which have <code>publicPeer</code> set to a Peer ID appear here.
+        </p>
+        <p>
+            If the Peer ID begins with <code>PUB_</code> and the peer shows as OK,
+            then the node is shared with other nodes so they can auto-peer with it, these
+            are also the criteria for a cjdns node to yield PKT.
+        </p>
+        <p>
+            If you would like your cjdns node to be tested, but you do not want anyone to
+            connect to it, you may set it to any Peer ID that does <string>not</string> begin
+            with <code>PUB_</code>.
+        </p>
+        <tr>
+            <th>Public Key</th>
+            <th>Peer ID</th>
+            <th>Last Check (minutes ago)</th>
+            <th>Last Report (minutes ago)</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        <!-- Rows will be added here by JavaScript -->
+    </tbody>
+</table>
+
+<script>
+
+    function minutesAgo(timestamp) {
+        const currentTimestamp = Math.floor(Date.now() / 1000);
+        if (currentTimestamp - timestamp < 60) {
+            return (currentTimestamp - timestamp) + ' seconds ago';
+        }
+        return Math.floor((currentTimestamp - timestamp) / 60) + ' minutes ago';
+    }
+
+    function renderNodes(nodes) {
+        const tableBody = document.querySelector('#nodes-table tbody');
+        tableBody.innerHTML = ''; // Clear any existing rows
+
+        nodes.forEach(node => {
+            const row = document.createElement('tr');
+
+            // Public Key
+            const publicKeyCell = document.createElement('td');
+            publicKeyCell.textContent = node.public_key;
+            row.appendChild(publicKeyCell);
+
+            // Peer ID
+            const peerIdCell = document.createElement('td');
+            peerIdCell.textContent = node.peer_id;
+            row.appendChild(peerIdCell);
+
+            // Last Check
+            const lastCheckCell = document.createElement('td');
+            lastCheckCell.textContent = minutesAgo(node.last_check_sec);
+            row.appendChild(lastCheckCell);
+
+            // Last Report
+            const lastReportCell = document.createElement('td');
+            lastReportCell.textContent = minutesAgo(node.last_report_sec);
+            row.appendChild(lastReportCell);
+
+            // Status
+            const statusCell = document.createElement('td');
+            if (node.check_error) {
+                statusCell.textContent = node.check_error;
+                statusCell.classList.add('error');
+            } else {
+                statusCell.textContent = 'OK';
+                statusCell.classList.add('ok');
+            }
+            row.appendChild(statusCell);
+
+            tableBody.appendChild(row);
+        });
+    }
+
+    async function fetchNodeStatus() {
+        try {
+            const response = await fetch('https://vinny.cjdns.fr/ptest/api/v1/status');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const nodesData = await response.json();
+            renderNodes(nodesData);
+        } catch (error) {
+            console.error('Failed to fetch node status:', error);
+        }
+    }
+
+    // Call the function to fetch data and render nodes
+    fetchNodeStatus();
+</script>
+
+</body>
+</html>
