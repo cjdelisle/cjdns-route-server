@@ -15,3 +15,4 @@ cjdns-hdr = { workspace = true }
 cjdns-keys = { workspace = true }
 cjdns-sniff = { workspace = true }
 netchecksum = { workspace = true }
+cjdns-snode-wire = { workspace = true }
