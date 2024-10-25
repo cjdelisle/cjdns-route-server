@@ -186,7 +186,9 @@ async fn main_loop_cycle(
     currently_testing: &mut VecDeque<(String,u64)>,
 ) -> Result<()> {
     log::debug!("[MAIN] loop getting nodes");
-    let peers = fetch_snode_data(&server.config.ptest.snode).await?;
+    let mut peers = fetch_snode_data(&server.config.ptest.snode).await?;
+    let thirty_minutes_ago = now_sec() - 60*30;
+    peers.retain(|p|p.last_report_sec >= thirty_minutes_ago);
     *server.state.lock().await = peers.clone();
     let nows = now_sec();
     while let Some((_, since)) = currently_testing.front() {
@@ -259,7 +261,7 @@ async fn http_status(server: Arc<Server>) -> HttpReply {
         last_check_sec: p.last_check_sec,
         last_report_sec: p.last_report_sec,
         ring: p.ring,
-        check_error: p.check_error.clone(),
+        check_error: if p.last_check_sec > 0 { p.check_error.clone() } else { Some("NotYetTested".to_string()) },
         public_key: p.peer.public_key.clone(),
         address: "REDACTED".into(),
         peer_id: p.id.clone(),
