@@ -9,3 +9,4 @@ pub use cjdns_hdr as hdr;
 pub use cjdns_keys as keys;
 pub use cjdns_sniff as sniff;
 pub use netchecksum as checksum;
+pub use cjdns_snode_wire as snode_wire;

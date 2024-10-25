@@ -231,6 +231,7 @@ dependencies = [
  "cjdns-hdr",
  "cjdns-keys",
  "cjdns-sniff",
+ "cjdns-snode-wire",
  "netchecksum",
 ]
 
