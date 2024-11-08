@@ -97,9 +97,9 @@ checksum = "080e9890a082662b09c1ad45f567faeeb47f22b5fb23895fbe1e651e718e25ca"
 
 [[package]]
 name = "async-trait"
-version = "0.1.82"
+version = "0.1.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a27b8a3a6e1a44fa4c8baf1f653e4172e81486d4941f2237e20dc2d0cf4ddff1"
+checksum = "721cae7de5c34fbb2acd27e21e6d2cf7b886dce0c27388d46c4e6c47ea4318dd"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -352,12 +352,15 @@ name = "cjdns-nameserver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.21.7",
  "cjdns-bytes",
  "cjdns-keys",
  "clap",
  "hex",
+ "hickory-server",
  "rand 0.7.3",
+ "tokio",
  "trust-dns-resolver",
 ]
 
@@ -536,6 +539,15 @@ name = "data-encoding"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e962a19be5cfc3f3bf6dd8f61eb50107f356ad6270fbb3ed41476571db78be5"
+
+[[package]]
+name = "deranged"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b42b6fa04a440b495c8b04d0e71b707c585f83cb9cb28cf8cd0d976c315e31b4"
+dependencies = [
+ "powerfmt",
+]
 
 [[package]]
 name = "digest"
@@ -863,6 +875,50 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hickory-proto"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07698b8420e2f0d6447a436ba999ec85d8fbf2a398bbd737b82cac4a2e96e512"
+dependencies = [
+ "async-trait",
+ "cfg-if",
+ "data-encoding",
+ "enum-as-inner",
+ "futures-channel",
+ "futures-io",
+ "futures-util",
+ "idna 0.4.0",
+ "ipnet",
+ "once_cell",
+ "rand 0.8.5",
+ "thiserror",
+ "tinyvec",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "hickory-server"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9be0e43c556b9b3fdb6c7c71a9a32153a2275d02419e3de809e520bfcfe40c37"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "cfg-if",
+ "enum-as-inner",
+ "futures-util",
+ "hickory-proto",
+ "serde",
+ "thiserror",
+ "time",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
 
 [[package]]
 name = "hostname"
@@ -1245,6 +1301,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-conv"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
+
+[[package]]
 name = "num-traits"
 version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1402,6 +1464,12 @@ name = "pkg-config"
 version = "0.3.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2900ede94e305130c13ddd391e0ab7cbaeb783945ae07a279c268cb05109c6cb"
+
+[[package]]
+name = "powerfmt"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "ppv-lite86"
@@ -1915,6 +1983,25 @@ dependencies = [
  "quote",
  "syn 2.0.48",
 ]
+
+[[package]]
+name = "time"
+version = "0.3.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dfd88e563464686c916c7e46e623e520ddc6d79fa6641390f2e3fa86e83e885"
+dependencies = [
+ "deranged",
+ "num-conv",
+ "powerfmt",
+ "serde",
+ "time-core",
+]
+
+[[package]]
+name = "time-core"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3"
 
 [[package]]
 name = "tinyvec"

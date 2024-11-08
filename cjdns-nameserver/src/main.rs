@@ -1,15 +1,78 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use clap::{Arg, Command, parser::ValuesRef};
 use anyhow::{anyhow, Context, Result};
 use rand::Rng;
+use tokio::{net::UdpSocket, sync::RwLock};
 
 use cjdns_bytes::{dnsseed::{CjdnsPeer, CjdnsTxtRecord}, message::Message};
 use cjdns_keys::CJDNSPublicKey;
 
+use hickory_server::proto::{
+    op::Edns, rr::{
+        self, rdata::NS, LowerName, RData, Record, RecordData, RecordType
+    }
+};
+use hickory_server::authority::{AuthorityObject, Catalog, ZoneType};
+use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo};
+use hickory_server::store::in_memory::InMemoryAuthority;
+use hickory_server::ServerFuture;
 
-fn main() -> Result<()> {
+async fn listen_dns() -> Result<()> {
+    let sock = UdpSocket::bind(("127.0.0.1",9876)).await?;
+
+    let mut catalog = Catalog::new();
+    // for (domain, records) in config.zones().iter() {
+        let zone = rr::Name::parse("pkt.wiki.", None)?;
+        let ns = rr::Name::parse("loopy.pkteer.com.", None)?;
+        let mut authorities = InMemoryAuthority::empty(zone.clone(), ZoneType::Primary, false);
+        // for record in records.iter() {
+            // let r = record.try_into()?;
+            let mut r = Record::with(zone.clone(), RecordType::NS, 5);
+            r.set_data(Some(NS(ns.clone()).into_rdata()));
+            // r.set_data(rdata)
+            authorities.upsert_mut(r, 0);
+        // }
+        catalog.upsert(zone.clone().into(), Box::new(Arc::new(authorities)));
+    // }
+
+    let catalog = Arc::new(RwLock::new(catalog));
+    let handler = CatalogRequestHandler::new(catalog);
+    let mut sf = ServerFuture::new(handler);
+    sf.register_socket(sock);
+
+    tokio::time::sleep(Duration::from_secs(u64::MAX)).await;
+
+    Ok(())
+}
+
+struct CatalogRequestHandler {
+    catalog: Arc<RwLock<Catalog>>,
+}
+
+impl CatalogRequestHandler {
+    fn new(catalog: Arc<RwLock<Catalog>>) -> CatalogRequestHandler {
+        Self { catalog }
+    }
+}
+
+#[async_trait::async_trait]
+impl RequestHandler for CatalogRequestHandler {
+    async fn handle_request<R: ResponseHandler>(
+        &self,
+        request: &Request,
+        response_handle: R,
+    ) -> ResponseInfo {
+        self.catalog
+            .read()
+            .await
+            .handle_request(request, response_handle)
+            .await
+    }
+}
+
+async fn async_main() -> Result<()> {
     let matches = Command::new("Cjdnseed")
         .about("A tool to generate peering credentials")
         .subcommand(
@@ -65,6 +128,10 @@ fn main() -> Result<()> {
                         .help("The seed node to test")
                         .required(true),
                 )
+        )
+        .subcommand(
+            Command::new("serve")
+                .about("Start domain server")
         )
         .get_matches();
 
@@ -168,9 +235,23 @@ fn main() -> Result<()> {
                 );
             }
         }
+    } else if let Some(_) = matches.subcommand_matches("serve") {
+        listen_dns().await?
     } else {
         println!("Not a valid command, try --help");
     }
 
     Ok(())
+}
+
+fn main() -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .thread_name("tokio-worker")
+        .thread_stack_size(32 * 1024 * 1024)
+        .enable_time()
+        .enable_io()
+        .build()
+        .unwrap();
+    runtime.block_on(async_main())
 }
