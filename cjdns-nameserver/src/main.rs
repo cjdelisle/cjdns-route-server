@@ -137,27 +137,21 @@ impl RequestHandler for CatalogRequestHandler {
         println!("Query of type {} for {name}", query.query_type());
 
         // Check if the query type is for NS record and if the name matches the pattern
-        if query.query_type() == RecordType::A {
-            if let Some(_) = extract_number_from_hostname(&name) {
-                // Extract the domain part after "ns<number>"
-                let remaining = name.splitn(2, '.').nth(1);
-                if let Some(domain) = remaining {
-                    if domain == &self.self_identity.name().to_ascii() {
-                        let mut rec = self.self_identity.clone();
-                        rec.set_name(query.name().into());
-                        return if let Ok(res) = respond_with_records(
-                            request,
-                            response_handle,
-                            vec![&rec],
-                            Vec::new(),
-                            Vec::new(),
-                        ).await {
-                            res
-                        } else {
-                            serve_failed()
-                        }
-                    }
-                }
+        if query.query_type() == RecordType::A &&
+            name.ends_with(&self.self_identity.name().to_ascii())
+        {
+            let mut rec = self.self_identity.clone();
+            rec.set_name(query.name().into());
+            return if let Ok(res) = respond_with_records(
+                request,
+                response_handle,
+                vec![&rec],
+                Vec::new(),
+                Vec::new(),
+            ).await {
+                res
+            } else {
+                serve_failed()
             }
         }
 
