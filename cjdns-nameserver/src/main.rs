@@ -1,44 +1,55 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr, str::FromStr, sync::Arc, time::Duration
+};
 
+use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use clap::{Arg, Command, parser::ValuesRef};
-use anyhow::{anyhow, Context, Result};
+use config::NameserverConfig;
+use hickory_client::{client::{Client, SyncClient}, rr::Name, udp::UdpClientConnection};
+use hickory_server::{
+    authority::{Catalog, MessageResponseBuilder},
+    proto::{
+        op::{Header, ResponseCode},
+        rr::{
+            self, rdata::A, Record, RecordType,
+        }
+    },
+    server::{Request, RequestHandler, ResponseHandler, ResponseInfo},
+    ServerFuture
+};
 use rand::Rng;
+use regex::Regex;
 use tokio::{net::UdpSocket, sync::RwLock};
 
 use cjdns_bytes::{dnsseed::{CjdnsPeer, CjdnsTxtRecord}, message::Message};
 use cjdns_keys::CJDNSPublicKey;
 
-use hickory_server::proto::{
-    op::Edns, rr::{
-        self, rdata::NS, LowerName, RData, Record, RecordData, RecordType
-    }
-};
-use hickory_server::authority::{AuthorityObject, Catalog, ZoneType};
-use hickory_server::server::{Request, RequestHandler, ResponseHandler, ResponseInfo};
-use hickory_server::store::in_memory::InMemoryAuthority;
-use hickory_server::ServerFuture;
+mod config;
 
 async fn listen_dns() -> Result<()> {
-    let sock = UdpSocket::bind(("127.0.0.1",9876)).await?;
+    let config = tokio::fs::read_to_string("./nameserver.yaml").await
+        .context("Failed to read config: nameserver.yaml")?;
+    let config: NameserverConfig = serde_yaml::from_str(&config)?;
+    let sock = UdpSocket::bind(config.bind_ipv4).await?;
 
     let mut catalog = Catalog::new();
-    // for (domain, records) in config.zones().iter() {
-        let zone = rr::Name::parse("pkt.wiki.", None)?;
-        let ns = rr::Name::parse("loopy.pkteer.com.", None)?;
-        let mut authorities = InMemoryAuthority::empty(zone.clone(), ZoneType::Primary, false);
-        // for record in records.iter() {
-            // let r = record.try_into()?;
-            let mut r = Record::with(zone.clone(), RecordType::NS, 5);
-            r.set_data(Some(NS(ns.clone()).into_rdata()));
-            // r.set_data(rdata)
-            authorities.upsert_mut(r, 0);
-        // }
-        catalog.upsert(zone.clone().into(), Box::new(Arc::new(authorities)));
-    // }
+    // // for (domain, records) in config.zones().iter() {
+    //     let zone = rr::Name::parse("pkt.wiki.", None)?;
+    //     let ns = rr::Name::parse("loopy.pkteer.com.", None)?;
+    //     let mut authorities = InMemoryAuthority::empty(zone.clone(), ZoneType::Primary, false);
+    //     // for record in records.iter() {
+    //         // let r = record.try_into()?;
+    //         let mut r = Record::with(zone.clone(), RecordType::NS, 5);
+    //         r.set_data(Some(NS(ns.clone()).into_rdata()));
+    //         // r.set_data(rdata)
+    //         authorities.upsert_mut(r, 0);
+    //     // }
+    //     catalog.upsert(zone.clone().into(), Box::new(Arc::new(authorities)));
+    // // }
 
     let catalog = Arc::new(RwLock::new(catalog));
-    let handler = CatalogRequestHandler::new(catalog);
+    let handler = CatalogRequestHandler::new(catalog, config)?;
     let mut sf = ServerFuture::new(handler);
     sf.register_socket(sock);
 
@@ -47,14 +58,71 @@ async fn listen_dns() -> Result<()> {
     Ok(())
 }
 
-struct CatalogRequestHandler {
-    catalog: Arc<RwLock<Catalog>>,
-}
 
 impl CatalogRequestHandler {
-    fn new(catalog: Arc<RwLock<Catalog>>) -> CatalogRequestHandler {
-        Self { catalog }
+    fn new(catalog: Arc<RwLock<Catalog>>, config: NameserverConfig) -> Result<CatalogRequestHandler> {
+        let self_identity = Record::from_rdata(
+            rr::Name::parse(&config.my_name, None)
+                .with_context(||format!("nameserver.yaml error: Unable to parse {} as a domain", config.my_name))?,
+            500,
+            A(config.public_ipv4.clone())
+        ).into_record_of_rdata();
+        Ok(Self {
+            catalog,
+            self_identity,
+        })
     }
+}
+
+fn extract_number_from_hostname(hostname: &str) -> Option<usize> {
+    // Compile the regex pattern
+    let re = Regex::new(r"^ns([0-9]+)\.pns\..*$").unwrap();
+    
+    // Try to find a match
+    if let Some(caps) = re.captures(hostname) {
+        // If there's a match, try to parse the captured number
+        if let Some(number_str) = caps.get(1) {
+            return number_str.as_str().parse::<usize>().ok();
+        }
+    }
+    None
+}
+
+struct CatalogRequestHandler {
+    catalog: Arc<RwLock<Catalog>>,
+    self_identity: Record,
+}
+
+async fn respond_with_records<R: ResponseHandler>(
+    request: &Request,
+    mut response_handle: R,
+    answers: Vec<&Record>,
+    name_servers: Vec<&Record>,
+    soa: Vec<&Record>,
+) -> Result<ResponseInfo> {
+    let resp =
+        MessageResponseBuilder::from_message_request(request).build(
+            Header::response_from_request(request.header()),
+            answers,
+            name_servers,
+            soa,
+            &[], // additional
+        );
+    match response_handle.send_response(resp).await {
+        Ok(x) => {
+            Ok(x)
+        }
+        Err(e) => {
+            println!("Error crafting A response: {e}");
+            Err(e.into())
+        }
+    }
+}
+
+fn serve_failed() -> ResponseInfo {
+    let mut header = Header::new();
+    header.set_response_code(ResponseCode::ServFail);
+    header.into()
 }
 
 #[async_trait::async_trait]
@@ -64,6 +132,36 @@ impl RequestHandler for CatalogRequestHandler {
         request: &Request,
         response_handle: R,
     ) -> ResponseInfo {
+        let query = request.query();
+        let name = query.name().to_string();
+        println!("Query of type {} for {name}", query.query_type());
+
+        // Check if the query type is for NS record and if the name matches the pattern
+        if query.query_type() == RecordType::A {
+            if let Some(_) = extract_number_from_hostname(&name) {
+                // Extract the domain part after "ns<number>"
+                let remaining = name.splitn(2, '.').nth(1);
+                if let Some(domain) = remaining {
+                    if domain == &self.self_identity.name().to_ascii() {
+                        let mut rec = self.self_identity.clone();
+                        rec.set_name(query.name().into());
+                        return if let Ok(res) = respond_with_records(
+                            request,
+                            response_handle,
+                            vec![&rec],
+                            Vec::new(),
+                            Vec::new(),
+                        ).await {
+                            res
+                        } else {
+                            serve_failed()
+                        }
+                    }
+                }
+            }
+        }
+
+        // If it's not an NS query or doesn't match the pattern, pass it to the catalog
         self.catalog
             .read()
             .await
@@ -210,10 +308,13 @@ async fn async_main() -> Result<()> {
         println!("TXT {}", ctr.encode()?);
     } else if let Some(matches) = matches.subcommand_matches("testseed") {
         let seed: &String = matches.get_one("seed").expect("Missing seed");
-        let resolver = trust_dns_resolver::Resolver::default()?;
-        let res = resolver.txt_lookup(seed)
+        let address = "8.8.8.8:53".parse().unwrap();
+        let conn = UdpClientConnection::new(address).unwrap();
+        let resolver = SyncClient::new(conn);
+        let seed = Name::from_str(&seed)?;
+        let res = resolver.query(&seed, rr::DNSClass::IN, RecordType::TXT)
             .with_context(||format!("Failed dns lookup for {seed}"))?;
-        let txt = res.iter().next().ok_or_else(||anyhow!("No TXT records found"))?;
+        let txt = res.answers().iter().next().ok_or_else(||anyhow!("No TXT records found"))?;
         let txt = txt.to_string();
         println!("TXT Record: {txt}");
         let ctr = CjdnsTxtRecord::decode(&txt)
@@ -254,4 +355,13 @@ fn main() -> Result<()> {
         .build()
         .unwrap();
     runtime.block_on(async_main())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_regex() {
+        let hostname = "ns203.pns.cjdns.fr";
+        assert_eq!(203, super::extract_number_from_hostname(hostname).unwrap());
+    }
 }
