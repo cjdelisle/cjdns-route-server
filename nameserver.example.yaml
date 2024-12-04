@@ -1,14 +1,25 @@
 # The IPv4 address of this server
 public_ipv4: "1.2.3.4"
 
+# Our public IPv6 address, optional
+public_ipv6: "aaaa:bbbb:cccc::"
+
 # The name of this server, used for identification, this must begin with pns and end with a dot
 my_name: "pns.mydomainname.tld."
 
 # The local ip/port on which the server will bind and listen
 bind_ipv4: "127.0.0.1:9876"
 
-# List of WebSocket endpoints for RPC communication
-rpc_websockers:
-  - "ws://not_real.example.com:8080/ws"
-  - "wss://also_fake.example.org:9090/websocket"
-  - "ws://this_is_a_placeholder.com:7070/rpc"
+# ETH RPC
+rpc:
+  # The chance that we will re-use an RPC server which has been marked as dead (0-1)
+  chance_dead_rpc: 0.1
+  # List of WebSocket endpoints for listening for events
+  ws_rpcs:
+    - "ws://not_real.example.com:8080/ws"
+    - "wss://also_fake.example.org:9090/websocket"
+    - "ws://this_is_a_placeholder.com:7070/rpc"
+  # List of HTTP endpoints for making specific queries
+  http_rpcs:
+    - "https://not_real.example.com/rpc"
+    - "https://also_fake.example.org/http_rpc"

@@ -19,6 +19,7 @@ members = [
     "cjdns-snode-wire",
     "cjdns-util",
     "cjdns-util-http",
+    "cjdns-eth-rpc",
 ]
 
 [workspace.dependencies]
@@ -56,6 +57,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json"]  }
 hickory-server = "0.24.1"
 hickory-client = "0.24.1"
 async-trait = "0.1.83"
+alloy = { git = "https://github.com/alloy-rs/alloy", version = "0.6.4", rev = "v0.6.4", features = ["full","signer-mnemonic"] }
+alloy-sol-types = "0.8.0"
+futures-util = "0.3"
 
 cjdns-admin = { path = "cjdns-admin" }
 cjdns-ann = { path = "cjdns-ann" }
@@ -71,3 +75,4 @@ netchecksum = { path = "netchecksum" }
 cjdns-snode-wire = { path = "cjdns-snode-wire" }
 cjdns-util = { path = "cjdns-util" }
 cjdns-util-http = { path = "cjdns-util-http" }
+cjdns-eth-rpc = { path = "cjdns-eth-rpc" }

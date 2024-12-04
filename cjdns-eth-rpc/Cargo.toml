@@ -1,0 +1,15 @@
+[package]
+name = "cjdns-eth-rpc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alloy = { workspace = true }
+alloy-sol-types = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+futures-util = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+
+cjdns-util = { workspace = true }

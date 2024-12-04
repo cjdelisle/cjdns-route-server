@@ -15,7 +15,7 @@ serde = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true }
 async-trait = { workspace = true }
-regex = { workspace = true }
 
 cjdns-keys = { workspace = true }
 cjdns-bytes = { workspace = true }
+cjdns-eth-rpc = { workspace = true }

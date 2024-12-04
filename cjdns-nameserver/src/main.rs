@@ -1,12 +1,12 @@
 use std::{
-    net::SocketAddr, str::FromStr, sync::Arc, time::Duration
+    collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc, time::Duration
 };
 
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use clap::{Arg, Command, parser::ValuesRef};
 use config::NameserverConfig;
-use hickory_client::{client::{Client, SyncClient}, rr::Name, udp::UdpClientConnection};
+use hickory_client::{client::{Client, SyncClient}, rr::{rdata::{AAAA, SOA}, Name, RecordData}, udp::UdpClientConnection};
 use hickory_server::{
     authority::{Catalog, MessageResponseBuilder},
     proto::{
@@ -19,9 +19,9 @@ use hickory_server::{
     ServerFuture
 };
 use rand::Rng;
-use regex::Regex;
 use tokio::{net::UdpSocket, sync::RwLock};
 
+use cjdns_eth_rpc::EthRpc;
 use cjdns_bytes::{dnsseed::{CjdnsPeer, CjdnsTxtRecord}, message::Message};
 use cjdns_keys::CJDNSPublicKey;
 
@@ -32,6 +32,8 @@ async fn listen_dns() -> Result<()> {
         .context("Failed to read config: nameserver.yaml")?;
     let config: NameserverConfig = serde_yaml::from_str(&config)?;
     let sock = UdpSocket::bind(config.bind_ipv4).await?;
+
+    let eth_rpc = cjdns_eth_rpc::EthRpc::new(&config.rpc).await?;
 
     let mut catalog = Catalog::new();
     // // for (domain, records) in config.zones().iter() {
@@ -49,7 +51,7 @@ async fn listen_dns() -> Result<()> {
     // // }
 
     let catalog = Arc::new(RwLock::new(catalog));
-    let handler = CatalogRequestHandler::new(catalog, config)?;
+    let handler = ReqHandler::new(catalog, config, eth_rpc)?;
     let mut sf = ServerFuture::new(handler);
     sf.register_socket(sock);
 
@@ -58,39 +60,43 @@ async fn listen_dns() -> Result<()> {
     Ok(())
 }
 
-
-impl CatalogRequestHandler {
-    fn new(catalog: Arc<RwLock<Catalog>>, config: NameserverConfig) -> Result<CatalogRequestHandler> {
-        let self_identity = Record::from_rdata(
-            rr::Name::parse(&config.my_name, None)
-                .with_context(||format!("nameserver.yaml error: Unable to parse {} as a domain", config.my_name))?,
+impl ReqHandler {
+    fn new(catalog: Arc<RwLock<Catalog>>, config: NameserverConfig, eth_rpc: Arc<EthRpc>) -> Result<ReqHandler> {
+        let name = rr::Name::parse(&config.my_name, None)
+            .with_context(||format!("nameserver.yaml error: Unable to parse {} as a domain", config.my_name))?;
+        let my_ipv4 = Record::from_rdata(
+            name.clone(),
             500,
             A(config.public_ipv4.clone())
         ).into_record_of_rdata();
+        let my_ipv6 = config.public_ipv6.map(|public_ipv6| {
+            Record::from_rdata(
+                name.clone(),
+                500,
+                AAAA(public_ipv6.clone())
+            ).into_record_of_rdata()
+        });
         Ok(Self {
+            m: Default::default(),
             catalog,
-            self_identity,
+            my_ipv4,
+            my_ipv6,
+            eth_rpc,
         })
     }
 }
 
-fn extract_number_from_hostname(hostname: &str) -> Option<usize> {
-    // Compile the regex pattern
-    let re = Regex::new(r"^ns([0-9]+)\.pns\..*$").unwrap();
-    
-    // Try to find a match
-    if let Some(caps) = re.captures(hostname) {
-        // If there's a match, try to parse the captured number
-        if let Some(number_str) = caps.get(1) {
-            return number_str.as_str().parse::<usize>().ok();
-        }
-    }
-    None
+#[derive(Default)]
+struct ReqHandlerMut {
+    records: HashMap<(String,RecordType),Vec<Record>>,
 }
 
-struct CatalogRequestHandler {
+struct ReqHandler {
+    m: RwLock<ReqHandlerMut>,
     catalog: Arc<RwLock<Catalog>>,
-    self_identity: Record,
+    my_ipv4: Record,
+    my_ipv6: Option<Record>,
+    eth_rpc: Arc<EthRpc>,
 }
 
 async fn respond_with_records<R: ResponseHandler>(
@@ -125,8 +131,27 @@ fn serve_failed() -> ResponseInfo {
     header.into()
 }
 
+fn nxdomain() -> ResponseInfo {
+    let mut header = Header::new();
+    header.set_response_code(ResponseCode::NXDomain);
+    header.into()
+}
+
+fn extract_subdomains(domain: &str) -> Option<Vec<String>> {
+    let parts: Vec<&str> = domain.split('.').collect();
+    if parts.len() >= 2 && parts[parts.len() - 2].eq_ignore_ascii_case("pkt") {
+        Some(parts
+            .into_iter()
+            .filter(|&part| !part.eq_ignore_ascii_case("pkt"))
+            .map(|part| part.to_string())
+            .collect())
+    } else {
+        None
+    }
+}
+
 #[async_trait::async_trait]
-impl RequestHandler for CatalogRequestHandler {
+impl RequestHandler for ReqHandler {
     async fn handle_request<R: ResponseHandler>(
         &self,
         request: &Request,
@@ -136,23 +161,94 @@ impl RequestHandler for CatalogRequestHandler {
         let name = query.name().to_string();
         println!("Query of type {} for {name}", query.query_type());
 
-        // Check if the query type is for NS record and if the name matches the pattern
-        if query.query_type() == RecordType::A &&
-            name.ends_with(&self.self_identity.name().to_ascii())
+        // Self-request for our own IP
+        if query.query_type() == RecordType::A || query.query_type() == RecordType::AAAA &&
+            name.ends_with(&self.my_ipv4.name().to_ascii())
         {
-            let mut rec = self.self_identity.clone();
-            rec.set_name(query.name().into());
+            let mut recs = if query.query_type() == RecordType::A {
+                vec![self.my_ipv4.clone()]
+            } else if query.query_type() == RecordType::AAAA {
+                if let Some(ip6) = &self.my_ipv6 {
+                    vec![ip6.clone()]
+                } else {
+                    Vec::new()
+                }
+            } else {
+                unreachable!()
+            };
+            for r in &mut recs {
+                r.set_name(query.name().into());
+            }
             return if let Ok(res) = respond_with_records(
                 request,
                 response_handle,
-                vec![&rec],
+                recs.iter().collect(),
                 Vec::new(),
                 Vec::new(),
             ).await {
                 res
             } else {
                 serve_failed()
+            };
+        } else if query.query_type() == RecordType::SOA &&
+            query.name().num_labels() == 2 &&
+            name.starts_with("pkt.")
+        {
+            let soa = Record::from_rdata(
+                query.name().into(),
+                600,
+                SOA::new(
+                    query.name().into(),
+                    Name::parse("domains.blockchain.project.pkt.", None).unwrap(),
+                    2024120300,
+                    3600,
+                    7200,
+                    604800,
+                    300,
+                ).into_rdata(),
+            );
+            return if let Ok(res) = respond_with_records(
+                request,
+                response_handle,
+                Vec::new(),
+                Vec::new(),
+                vec![&soa],
+            ).await {
+                res
+            } else {
+                serve_failed()
+            };
+        } else if let Some(mut path) = extract_subdomains(&name) {
+            // my.project.pkt.xyz
+            // ["my","project","xyz"]
+            if path.len() == 1 {
+                // We need to map pkt.xxx to whatever domain the owner of .xxx wants
+                return nxdomain();
             }
+            // We don't care what the top level domain is
+            path.pop();
+            let key = path.join(".");
+            let mut recs = {
+                let m = self.m.read().await;
+                let Some(recs) = m.records.get(&(key,query.query_type())) else {
+                    return nxdomain();
+                };
+                recs.clone()
+            };
+            for r in &mut recs {
+                r.set_name(query.name().into());
+            }
+            return if let Ok(res) = respond_with_records(
+                request,
+                response_handle,
+                recs.iter().collect(),
+                Vec::new(),
+                Vec::new(),
+            ).await {
+                res
+            } else {
+                serve_failed()
+            };
         }
 
         // If it's not an NS query or doesn't match the pattern, pass it to the catalog
@@ -353,9 +449,20 @@ fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn test_regex() {
-        let hostname = "ns203.pns.cjdns.fr";
-        assert_eq!(203, super::extract_number_from_hostname(hostname).unwrap());
+    fn test_extract_subdomains() {
+        // Test cases where the function should return Some
+        assert_eq!(extract_subdomains("abcd.pkt.xyz"), Some(vec!["abcd".to_string(), "xyz".to_string()]));
+        assert_eq!(extract_subdomains("defg.hijk.pkt.com"), Some(vec!["defg".to_string(), "hijk".to_string(), "com".to_string()]));
+        assert_eq!(extract_subdomains("pkt.com"), Some(vec!["com".to_string()]));
+
+        // Test cases where the function should return None
+        assert_eq!(extract_subdomains("example.com"), None);
+        assert_eq!(extract_subdomains("test.pkt"), None); // Missing TLD after pkt
+        assert_eq!(extract_subdomains("too.short"), None); // Not enough parts
+        assert_eq!(extract_subdomains("pkt.example.com"), None); // "pkt" not at the second to last position
+        assert_eq!(extract_subdomains("a.b.c.d.pkt"), None); // Needs a TLD after "pkt"
     }
 }
