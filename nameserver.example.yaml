@@ -10,6 +10,10 @@ my_name: "pns.mydomainname.tld."
 # The local ip/port on which the server will bind and listen
 bind_ipv4: "127.0.0.1:9876"
 
+nameservers:
+  - "pns.cjdns.fr."
+  - "pns.pkteer.com."
+
 # ETH RPC
 rpc:
   # The chance that we will re-use an RPC server which has been marked as dead (0-1)

@@ -10,4 +10,5 @@ pub struct NameserverConfig {
     pub my_name: String,
     pub bind_ipv4: SocketAddr,
     pub rpc: EthRpcConfig,
+    pub nameservers: Vec<String>,
 }

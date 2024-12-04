@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use clap::{Arg, Command, parser::ValuesRef};
 use config::NameserverConfig;
-use hickory_client::{client::{Client, SyncClient}, rr::{rdata::{AAAA, SOA}, Name, RecordData}, udp::UdpClientConnection};
+use hickory_client::{client::{Client, SyncClient}, rr::{rdata::{AAAA, NS, SOA}, Name, RecordData}, udp::UdpClientConnection};
 use hickory_server::{
     authority::{Catalog, MessageResponseBuilder},
     proto::{
@@ -76,8 +76,18 @@ impl ReqHandler {
                 AAAA(public_ipv6.clone())
             ).into_record_of_rdata()
         });
+        let mut nameservers = Vec::new();
+        for ns in &config.nameservers {
+            nameservers.push(
+                rr::Name::parse(ns, None)
+                    .with_context(||format!("nameserver.yaml error: Unable to parse {} as a domain", ns))?
+            );
+        }
         Ok(Self {
-            m: Default::default(),
+            m: RwLock::new(ReqHandlerMut{
+                records: Default::default(),
+                nameservers,
+            }),
             catalog,
             my_ipv4,
             my_ipv6,
@@ -89,6 +99,7 @@ impl ReqHandler {
 #[derive(Default)]
 struct ReqHandlerMut {
     records: HashMap<(String,RecordType),Vec<Record>>,
+    nameservers: Vec<Name>,
 }
 
 struct ReqHandler {
@@ -213,6 +224,30 @@ impl RequestHandler for ReqHandler {
                 Vec::new(),
                 Vec::new(),
                 vec![&soa],
+            ).await {
+                res
+            } else {
+                serve_failed()
+            };
+        } else if query.query_type() == RecordType::NS &&
+            query.name().num_labels() == 2 &&
+            name.starts_with("pkt.")
+        {
+            let names = {
+                let m = self.m.read().await;
+                m.nameservers.clone()
+            };
+            let recs = names.into_iter().map(|n|Record::from_rdata(
+                query.name().into(),
+                600,
+                NS(n).into_rdata(),
+            )).collect::<Vec<_>>();
+            return if let Ok(res) = respond_with_records(
+                request,
+                response_handle,
+                Vec::new(),
+                recs.iter().collect(),
+                Vec::new(),
             ).await {
                 res
             } else {
