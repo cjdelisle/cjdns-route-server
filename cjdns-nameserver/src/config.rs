@@ -1,4 +1,4 @@
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::{collections::HashMap, net::{Ipv4Addr, Ipv6Addr, SocketAddr}};
 
 use cjdns_eth_rpc::EthRpcConfig;
 use serde::{Deserialize, Serialize};
@@ -11,4 +11,5 @@ pub struct NameserverConfig {
     pub bind_ipv4: SocketAddr,
     pub rpc: EthRpcConfig,
     pub nameservers: Vec<String>,
+    pub special_ns_prefix: HashMap<String,String>,
 }

@@ -14,6 +14,9 @@ nameservers:
   - "pns.cjdns.fr."
   - "pns.pkteer.com."
 
+special_ns_prefix:
+  pkt.management: ns69
+
 # ETH RPC
 rpc:
   # The chance that we will re-use an RPC server which has been marked as dead (0-1)

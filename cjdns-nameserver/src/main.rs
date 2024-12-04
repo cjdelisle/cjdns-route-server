@@ -6,7 +6,15 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use clap::{Arg, Command, parser::ValuesRef};
 use config::NameserverConfig;
-use hickory_client::{client::{Client, SyncClient}, rr::{rdata::{AAAA, NS, SOA}, Name, RecordData}, udp::UdpClientConnection};
+use hickory_client::{
+    client::{Client, SyncClient},
+    rr::{
+        rdata::{AAAA, NS, SOA},
+        Name,
+        RecordData,
+    },
+    udp::UdpClientConnection,
+};
 use hickory_server::{
     authority::{Catalog, MessageResponseBuilder},
     proto::{
@@ -94,6 +102,7 @@ impl ReqHandler {
             my_ipv4,
             my_ipv6,
             eth_rpc,
+            config,
         })
     }
 }
@@ -110,6 +119,7 @@ struct ReqHandler {
     my_ipv4: Record,
     my_ipv6: Option<Record>,
     eth_rpc: Arc<EthRpc>,
+    config: NameserverConfig,
 }
 
 async fn respond_with_records<R: ResponseHandler>(
@@ -235,10 +245,23 @@ impl RequestHandler for ReqHandler {
             query.name().num_labels() == 2 &&
             name.starts_with("pkt.")
         {
-            let names = {
+            let mut names = {
                 let m = self.m.read().await;
                 m.nameservers.clone()
             };
+            if let Some(pfx) = self.config.special_ns_prefix.get(&name) {
+                for n in &mut names {
+                    let Ok(local) = Name::from_str(pfx) else {
+                        println!("{pfx} does not parse as a name");
+                        continue;
+                    };
+                    let Ok(pn) = local.append_name(&n) else {
+                        println!("Unable to prepend prefix {pfx} to name {n}");
+                        continue;
+                    };
+                    *n = pn;
+                }
+            }
             let recs = names.into_iter().map(|n|Record::from_rdata(
                 query.name().into(),
                 600,
