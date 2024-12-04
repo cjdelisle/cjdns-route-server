@@ -67,15 +67,13 @@ impl ReqHandler {
         let my_ipv4 = Record::from_rdata(
             name.clone(),
             500,
-            A(config.public_ipv4.clone())
-        ).into_record_of_rdata();
-        let my_ipv6 = config.public_ipv6.map(|public_ipv6| {
-            Record::from_rdata(
-                name.clone(),
-                500,
-                AAAA(public_ipv6.clone())
-            ).into_record_of_rdata()
-        });
+            A(config.public_ipv4.clone()).into_rdata()
+        );
+        let my_ipv6 = config.public_ipv6.map(|public_ipv6|Record::from_rdata(
+            name.clone(),
+            500,
+            AAAA(public_ipv6.clone()).into_rdata()
+        ).set_record_type(RecordType::AAAA));
         let mut nameservers = Vec::new();
         for ns in &config.nameservers {
             nameservers.push(
