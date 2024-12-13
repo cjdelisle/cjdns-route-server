@@ -129,9 +129,11 @@ async fn respond_with_records<R: ResponseHandler>(
     name_servers: Vec<&Record>,
     soa: Vec<&Record>,
 ) -> Result<ResponseInfo> {
+    let mut hdr = Header::response_from_request(request.header());
+    hdr.set_authoritative(true);
     let resp =
         MessageResponseBuilder::from_message_request(request).build(
-            Header::response_from_request(request.header()),
+            hdr,
             answers,
             name_servers,
             soa,
@@ -182,7 +184,7 @@ impl RequestHandler for ReqHandler {
     ) -> ResponseInfo {
         let query = request.query();
         let name = query.name().to_string();
-        println!("Query of type {} for {name}", query.query_type());
+        println!("Query of type {} for {name} from {}", query.query_type(), request.request_info().src);
 
         // Self-request for our own IP
         if query.query_type() == RecordType::A || query.query_type() == RecordType::AAAA &&
