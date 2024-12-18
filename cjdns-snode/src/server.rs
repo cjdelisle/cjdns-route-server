@@ -5,8 +5,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use anyhow::Error;
-use anyhow::Result;
+use eyre::Error;
+use eyre::Result;
 use cjdns_hdr::RouteHeader;
 use futures::future::try_join_all;
 use http::Uri;
@@ -223,7 +223,7 @@ impl Server {
         }
 
         if let Some(source) = source {
-            let self_node = self_node.ok_or_else(|| anyhow!("no self_node"))?;
+            let self_node = self_node.ok_or_else(|| eyre!("no self_node"))?;
             if let Some(ann) = ann_opt.as_ref() {
                 if ann.header.snode_ip != self_node.ipv6 {
                     warn!("announcement from {:?} meant for other snode, we are {} got {}",
@@ -312,7 +312,7 @@ impl Server {
                 Some(ann.clone()),
             )?;
             let try_node = self.nodes.add_node(n, true);
-            node = Some(try_node.map_err(|()| anyhow!("internal error: add_node() failed"))?);
+            node = Some(try_node.map_err(|()| eyre!("internal error: add_node() failed"))?);
         } else if let Some(node) = node.as_ref() {
             self.add_announcement(node.clone(), &ann, debug_noisy);
         } else {

@@ -1,6 +1,6 @@
 use std::{convert::TryFrom, sync::Arc};
 
-use anyhow::Result;
+use eyre::Result;
 use cjdns_snode_wire::{SeederListPeer, SeederTestRes};
 use cjdns_util::now_sec;
 use tokio::sync::Mutex;

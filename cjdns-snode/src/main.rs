@@ -13,13 +13,13 @@
 //! * Start the node: `$ ../target/release/cjdns-snode`
 
 #[macro_use]
-extern crate anyhow;
+extern crate eyre;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
 
-use anyhow::Result;
+use eyre::Result;
 use cjdns_util::now_sec;
 use std::io::Write;
 
@@ -89,7 +89,7 @@ mod args {
 mod config {
     use std::path::Path;
 
-    use anyhow::Error;
+    use eyre::Error;
     use serde::Deserialize;
     use tokio::fs;
 
@@ -97,8 +97,8 @@ mod config {
     pub(super) async fn load(file_path: &Path) -> Result<Config, Error> {
         let json = fs::read(file_path)
             .await
-            .map_err(|e| anyhow!("failed to load config file '{}': {}", file_path.display(), e))?;
-        let config = serde_json::from_slice(&json).map_err(|e| anyhow!("failed to parse config file '{}': {}", file_path.display(), e))?;
+            .map_err(|e| eyre!("failed to load config file '{}': {}", file_path.display(), e))?;
+        let config = serde_json::from_slice(&json).map_err(|e| eyre!("failed to parse config file '{}': {}", file_path.display(), e))?;
         Ok(config)
     }
 

@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 alloy = { workspace = true }
 alloy-sol-types = { workspace = true }
-anyhow = { workspace = true }
+eyre = { workspace = true }
 tokio = { workspace = true }
 futures-util = { workspace = true }
 rand = { workspace = true }

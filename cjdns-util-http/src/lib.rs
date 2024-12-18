@@ -9,7 +9,7 @@ pub fn status_resp<T: Into<String>>(msg: T, status_code: StatusCode) -> HttpRepl
     Ok(Box::new(warp::reply::with_status(msg.into(), status_code)))
 }
 
-pub fn internal_err(msg: &str, e: anyhow::Error) -> HttpReply {
+pub fn internal_err(msg: &str, e: eyre::Error) -> HttpReply {
     status_resp(format!("{msg}: {e}"), StatusCode::INTERNAL_SERVER_ERROR)
 }
 

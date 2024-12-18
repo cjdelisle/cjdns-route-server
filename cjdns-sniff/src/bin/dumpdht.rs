@@ -2,7 +2,7 @@
 
 use std::convert::TryFrom;
 
-use anyhow::{anyhow, Error};
+use eyre::{eyre, Error};
 use tokio::{select, signal};
 
 use cjdns_bencode::BValue;
@@ -59,7 +59,7 @@ fn dump_msg(msg: Message) -> Result<(), Error> {
     buf.push(msg.route_header.ip6.as_ref().map(|s| s.to_string()).unwrap_or_default());
 
     if let Content::Benc(benc) = msg.content {
-        dump_bencode(benc, &mut buf).map_err(|_| anyhow!("unrecognized bencoded content"))?;
+        dump_bencode(benc, &mut buf).map_err(|_| eyre!("unrecognized bencoded content"))?;
     }
 
     let s = buf.join(" ");
@@ -97,5 +97,5 @@ fn dump_bencode(benc: BValue, buf: &mut Vec<String>) -> Result<(), ()> {
 }
 
 fn dump_error(err: ParseError, data: Vec<u8>) {
-    println!("Bad message received:\n{}\n{}", hex::encode(data), anyhow!(err));
+    println!("Bad message received:\n{}\n{}", hex::encode(data), eyre!(err));
 }

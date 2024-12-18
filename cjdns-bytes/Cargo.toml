@@ -12,7 +12,7 @@ description = "Parsing & serializing tools"
 [dependencies]
 thiserror = { workspace = true }
 byteorder = { workspace = true }
-anyhow = { workspace = true }
+eyre = { workspace = true }
 base64 = { workspace = true }
 serde = { workspace = true }
 hex = { workspace = true }

@@ -23,7 +23,7 @@ members = [
 ]
 
 [workspace.dependencies]
-anyhow = "1.0"
+eyre = "0.6.12"
 dirs = "5"
 hex = "0.4"
 rand = "0.7"

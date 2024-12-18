@@ -9,7 +9,7 @@ license = "GPL-3.0-or-later"
 description = "cjdns node admin lib & binary"
 
 [dependencies]
-anyhow = { workspace = true }
+eyre = { workspace = true }
 dirs = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }

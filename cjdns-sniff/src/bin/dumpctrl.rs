@@ -1,6 +1,6 @@
 //! Tool to sniff CTRL messages.
 
-use anyhow::{anyhow, Error};
+use eyre::{eyre, Error};
 use tokio::{select, signal};
 
 use cjdns_ctrl::{CtrlMessageType, ErrorMessageType};
@@ -57,18 +57,18 @@ fn dump_msg(msg: Message) -> Result<(), Error> {
         buf.push(msg_type_str(ctrl.msg_type).to_string());
         match ctrl.msg_type {
             CtrlMessageType::Error => {
-                let err_data = ctrl.get_error_data().ok_or_else(|| anyhow!("invalid control error message"))?;
+                let err_data = ctrl.get_error_data().ok_or_else(|| eyre!("invalid control error message"))?;
                 buf.push(format!("{}", err_type_str(err_data.err_type)));
                 buf.push(format!("label_at_err_node: {}", err_data.switch_header.label));
                 buf.push(hex::encode(&err_data.additional));
             }
             CtrlMessageType::Ping | CtrlMessageType::Pong | CtrlMessageType::KeyPing | CtrlMessageType::KeyPong => {
-                let ping_data = ctrl.get_ping_data().ok_or_else(|| anyhow!("invalid control ping message"))?;
+                let ping_data = ctrl.get_ping_data().ok_or_else(|| eyre!("invalid control ping message"))?;
                 if ctrl.msg_type == CtrlMessageType::Ping || ctrl.msg_type == CtrlMessageType::Pong {
                     buf.push(format!("v{}", ping_data.version));
                 }
                 if ctrl.msg_type == CtrlMessageType::KeyPing || ctrl.msg_type == CtrlMessageType::KeyPong {
-                    let key = ping_data.key.as_ref().ok_or_else(|| anyhow!("Bad message: missing key"))?;
+                    let key = ping_data.key.as_ref().ok_or_else(|| eyre!("Bad message: missing key"))?;
                     buf.push(format!("{}", key));
                 }
             }
@@ -113,5 +113,5 @@ fn err_type_str(t: ErrorMessageType) -> &'static str {
 }
 
 fn dump_error(err: ParseError, data: Vec<u8>) {
-    println!("Bad message received:\n{}\n{}", hex::encode(data), anyhow!(err));
+    println!("Bad message received:\n{}\n{}", hex::encode(data), eyre!(err));
 }

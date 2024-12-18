@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 use std::io::Write;
 
-use anyhow::{bail, Result};
+use eyre::{bail, Result};
 use cjdns_keys::{PublicKey, CJDNS_IP6};
 use cjdns_snode_wire::{SeederListPeer, SeederTestRes, SeederTestResNode};
 use cjdns_util::now_sec;

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use anyhow::Error;
+use eyre::Error;
 use parking_lot::{Mutex, RwLock};
 
 use cjdns_ann::{AnnHash, Announcement};
@@ -120,7 +120,7 @@ impl Nodes {
                 if let Some(onode) = self.nodes_by_ip.read().get(&ipv6) {
                     onode.encoding_scheme.clone()
                 } else {
-                    return Err(anyhow!("cannot create node we do not know its encoding scheme"));
+                    return Err(eyre!("cannot create node we do not know its encoding scheme"));
                 }
             }
         };

@@ -9,7 +9,7 @@ license = "GPL-3.0-or-later"
 description = "Tools for dumping and injecting cjdns traffic"
 
 [dependencies]
-anyhow = { workspace = true }
+eyre = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }

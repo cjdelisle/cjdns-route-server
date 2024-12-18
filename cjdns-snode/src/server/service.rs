@@ -4,7 +4,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Error;
+use eyre::Error;
 use tokio::{select, time};
 
 use cjdns_admin::msgs::{Empty, GenericResponsePayload};
@@ -38,10 +38,10 @@ async fn do_service(server: Arc<Server>) -> Result<(), Error> {
     // Querying local node info
     let node_info = cjdns.invoke::<_, CoreNodeInfoPayload>("Core_nodeInfo", Empty {}).await?;
 
-    let (version, _, pub_key) = parse_node_name(&node_info.my_addr).map_err(|_| anyhow!("malformed node name string returned by Core_nodeInfo()"))?;
-    let ipv6 = CJDNS_IP6::try_from(&pub_key).map_err(|e| anyhow!("bad node public key returned by Core_nodeInfo(): {}", e))?;
+    let (version, _, pub_key) = parse_node_name(&node_info.my_addr).map_err(|_| eyre!("malformed node name string returned by Core_nodeInfo()"))?;
+    let ipv6 = CJDNS_IP6::try_from(&pub_key).map_err(|e| eyre!("bad node public key returned by Core_nodeInfo(): {}", e))?;
     let encoding_scheme =
-        try_parse_encoding_scheme(node_info.encoding_scheme).map_err(|e| anyhow!("bad encoding scheme returned by Core_nodeInfo(): {}", e))?;
+        try_parse_encoding_scheme(node_info.encoding_scheme).map_err(|e| eyre!("bad encoding scheme returned by Core_nodeInfo(): {}", e))?;
 
     let self_node = server
         .nodes
@@ -73,7 +73,7 @@ async fn handle_subnode_messages(mut sniffer: Sniffer, server: Arc<Server>) -> R
                 return Err(err.into());
             }
             Err(ReceiveError::ParseError(err, data)) => {
-                debug!("Bad message received:\n{}\n{}", hex::encode(data), anyhow!(err));
+                debug!("Bad message received:\n{}\n{}", hex::encode(data), eyre!(err));
             }
         }
     }
@@ -86,16 +86,16 @@ async fn check_connection_alive(mut cjdns: Connection) -> Result<(), Error> {
         time::sleep(CHECK_CONNECTION_DELAY).await;
 
         if count_handlers(&mut cjdns).await? == 0 {
-            return Err(anyhow!("Call to UpperDistributor_listHandlers returned 0 handlers - connection aborted?"));
+            return Err(eyre!("Call to UpperDistributor_listHandlers returned 0 handlers - connection aborted?"));
         }
     }
 }
 
 async fn count_handlers(cjdns: &mut Connection) -> Result<usize, Error> {
     let ret: GenericResponsePayload = cjdns.invoke("UpperDistributor_listHandlers", ArgValues::new().add("page", 0)).await?;
-    match ret.get("handlers").ok_or(anyhow!("no 'handler' key in response"))? {
+    match ret.get("handlers").ok_or(eyre!("no 'handler' key in response"))? {
         ReturnValue::List(handlers) => Ok(handlers.len()),
-        _ => Err(anyhow!("unrecognized 'handlers' value format")),
+        _ => Err(eyre!("unrecognized 'handlers' value format")),
     }
 }
 
@@ -138,7 +138,7 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
                 .ok()
                 .filter(|&p| p > 0)
                 .map(|p| p as u32)
-                .ok_or(anyhow!("bad message: 'p' expected to be positive int"))?;
+                .ok_or(eyre!("bad message: 'p' expected to be positive int"))?;
             p
         } else {
             if let Some(ip) = route_header.ip6.as_ref() {
@@ -168,7 +168,7 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
     let self_version = if let Some(self_node) = server.mut_state.lock().self_node.as_ref() {
         self_node.version as i64
     } else {
-        return Err(anyhow!("self node isn't set"));
+        return Err(eyre!("self node isn't set"));
     } as i64;
 
     let res = match sq.as_str() {
@@ -189,8 +189,8 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
                 .get_dict_value_bytes("tar")
                 .expect("bad message: 'tar' bytes entry expected in root dict");
 
-            let src_ip = CJDNS_IP6::try_from(src.as_slice()).map_err(|e| anyhow!("bad 'src' address: {}", e))?;
-            let tar_ip = CJDNS_IP6::try_from(tar.as_slice()).map_err(|e| anyhow!("bad 'tar' address: {}", e))?;
+            let src_ip = CJDNS_IP6::try_from(src.as_slice()).map_err(|e| eyre!("bad 'src' address: {}", e))?;
+            let tar_ip = CJDNS_IP6::try_from(tar.as_slice()).map_err(|e| eyre!("bad 'tar' address: {}", e))?;
 
             if debug_noisy {
                 debug!("gr {} -> {}", src_ip, tar_ip);
@@ -333,7 +333,7 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
                     }
                 }
             } else {
-                return Err(anyhow!("no ip6 (ctrl message?)"));
+                return Err(eyre!("no ip6 (ctrl message?)"));
             }
 
             Some((res.build(), version))
@@ -344,7 +344,7 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
                 debug!("pc");
             }
             let pc = content_benc.get_dict_value_bytes("pc").expect("benc 'pc' entry"); // Safe because of the check above
-            let ip6 = route_header.ip6.as_ref().ok_or_else(||anyhow!("No IP6"))?;
+            let ip6 = route_header.ip6.as_ref().ok_or_else(||eyre!("No IP6"))?;
             let res = match server.seeder.post_credentials(ip6, &pc, &server).await {
                 Ok(r) => {
                     BValue::builder()
@@ -381,7 +381,7 @@ async fn on_subnode_message_impl(server: Arc<Server>, route_header: RouteHeader,
 mod core_node_info {
     use std::convert::{TryFrom, TryInto};
 
-    use anyhow::Error;
+    use eyre::Error;
     use serde::Deserialize;
 
     use cjdns_core::{EncodingScheme, EncodingSchemeForm};
@@ -412,8 +412,8 @@ mod core_node_info {
         type Error = Error;
 
         fn try_from(form: EncForm) -> Result<Self, Self::Error> {
-            let prefix = u32::from_str_radix(&form.prefix, 16).map_err(|e| anyhow!("bad prefix: {}", e))?;
-            EncodingSchemeForm::try_new(form.bit_count, form.prefix_len, prefix).map_err(|e| anyhow!("bad encoding form: {}", e))
+            let prefix = u32::from_str_radix(&form.prefix, 16).map_err(|e| eyre!("bad prefix: {}", e))?;
+            EncodingSchemeForm::try_new(form.bit_count, form.prefix_len, prefix).map_err(|e| eyre!("bad encoding form: {}", e))
         }
     }
 

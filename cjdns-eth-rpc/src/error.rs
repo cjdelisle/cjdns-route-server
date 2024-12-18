@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use alloy::transports::{RpcError, TransportErrorKind};
-use anyhow::{bail, Result};
+use eyre::{bail, Result};
 
 use crate::{rpcinstance::RpcInfo, types::RPC_MAX_TRIES};
 
@@ -60,7 +60,7 @@ pub fn handle_transport_error(
 }
 
 pub async fn handle_generic_error(
-    e: anyhow::Error,
+    e: eyre::Error,
     i: i32,
     rpc_info: &Arc<RpcInfo>,
 ) -> Result<()> {

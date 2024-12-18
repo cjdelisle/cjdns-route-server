@@ -8,7 +8,7 @@ use std::{
 use alloy::{
     contract::EventSubscription, primitives::{Address, B256}, providers::{ProviderBuilder, WsConnect}, rpc::types::Log, sol_types::SolEvent, transports::http::reqwest::Url
 };
-use anyhow::{anyhow, bail, Result};
+use eyre::{eyre, bail, Result};
 use futures_util::StreamExt;
 use rpcinstance::{RpcInfo, RpcInstance};
 use serde::{Deserialize, Serialize};
@@ -138,7 +138,7 @@ impl EthRpc {
         where
             F: Fn(RpcInstance<AlloyFilledProvider>) -> FY,
             FY: IntoFuture<Output=Result<Y,E>>,
-            E: Into<anyhow::Error>,
+            E: Into<eyre::Error>,
     {
         let mut i = 0;
         loop {
@@ -159,7 +159,7 @@ impl EthRpc {
                 }
                 _ = tokio::time::sleep(Duration::from_secs(10)) => {
                     if i > RPC_MAX_TRIES {
-                        return Err(anyhow!("Failed after {RPC_MAX_TRIES} tries to read transaction"));
+                        return Err(eyre!("Failed after {RPC_MAX_TRIES} tries to read transaction"));
                     } else {
                         println!("read_eth() timed out attempt {i}/{RPC_MAX_TRIES}, retry...");
                     }

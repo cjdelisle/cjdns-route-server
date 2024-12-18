@@ -2,7 +2,7 @@
 
 use std::{env, path};
 
-use anyhow::Error;
+use eyre::Error;
 use regex::Regex;
 
 use cjdns_admin::{msgs::GenericResponsePayload, ArgValue, ArgValues, Func};

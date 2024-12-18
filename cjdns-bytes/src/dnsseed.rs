@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::io::Read;
 
-use anyhow::{bail, Context, Result};
+use eyre::{bail, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use byteorder::{ReadBytesExt,WriteBytesExt,BE};
 use serde::{Deserialize, Serialize};

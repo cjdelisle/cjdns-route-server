@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::Error;
+use eyre::Error;
 use futures::{Future, SinkExt, StreamExt};
 use http::Uri;
 use parking_lot::Mutex;
@@ -240,7 +240,7 @@ impl Peers {
                 if is_outgoing_hello != is_outgoing_peer {
                     let (peer_id, peer_addr) = (peer.id, peer.addr.clone());
                     self.drop_peer(peer);
-                    return Err(anyhow!("Bad hello message from peer {} ip {}", peer_id, peer_addr));
+                    return Err(eyre!("Bad hello message from peer {} ip {}", peer_id, peer_addr));
                 }
             }
             _ => {}
@@ -285,7 +285,7 @@ impl Peers {
                 if peer.peer_type == PeerType::Outgoing {
                     let known_id = peer.complete_req(id);
                     if !known_id {
-                        return Err(anyhow!("Unexpected DATA received, id={}", id));
+                        return Err(eyre!("Unexpected DATA received, id={}", id));
                     }
                     ann_tx.send(data).await?;
                 } else {

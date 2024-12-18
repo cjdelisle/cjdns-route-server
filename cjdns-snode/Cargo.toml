@@ -9,7 +9,7 @@ license = "GPL-3.0-or-later"
 description = "cjdns supernode"
 
 [dependencies]
-anyhow = { workspace = true }
+eyre = { workspace = true }
 clap = { workspace = true }
 env_logger = { workspace = true }
 futures = { workspace = true }

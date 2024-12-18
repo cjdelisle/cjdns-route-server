@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use anyhow::{bail, Result};
+use eyre::{bail, Result};
 use cjdns_admin::{ArgValues, Connection, Opts};
 use cjdns_bytes::dnsseed::PeeringLine;
 use serde::{Deserialize, Serialize};

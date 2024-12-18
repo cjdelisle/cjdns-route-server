@@ -2,7 +2,7 @@ use std::{
     collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc, time::Duration
 };
 
-use anyhow::{anyhow, Context, Result};
+use eyre::{eyre, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use clap::{Arg, Command, parser::ValuesRef};
 use config::NameserverConfig;
@@ -453,7 +453,7 @@ async fn async_main() -> Result<()> {
             let tlv = hex::decode(&ps[..])
                 .with_context(||format!("Unable to decode {ps} as hex"))?;
             if tlv.len() < 2 {
-                anyhow::bail!("Peer {ps} must be more than 2 bytes");
+                eyre::bail!("Peer {ps} must be more than 2 bytes");
             }
             let p = CjdnsPeer::decode(tlv[0], &mut &tlv[2..])
                 .with_context(||format!("Unable to decode {ps} as a CjdnsPeer"))?;
@@ -474,7 +474,7 @@ async fn async_main() -> Result<()> {
         let seed = Name::from_str(&seed)?;
         let res = resolver.query(&seed, rr::DNSClass::IN, RecordType::TXT)
             .with_context(||format!("Failed dns lookup for {seed}"))?;
-        let txt = res.answers().iter().next().ok_or_else(||anyhow!("No TXT records found"))?;
+        let txt = res.answers().iter().next().ok_or_else(||eyre!("No TXT records found"))?;
         let txt = txt.to_string();
         println!("TXT Record: {txt}");
         let ctr = CjdnsTxtRecord::decode(&txt)

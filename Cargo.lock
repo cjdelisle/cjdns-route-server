@@ -678,12 +678,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anyhow"
-version = "1.0.79"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "080e9890a082662b09c1ad45f567faeeb47f22b5fb23895fbe1e651e718e25ca"
-
-[[package]]
 name = "ark-ff"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1098,9 +1092,9 @@ dependencies = [
 name = "cjdns-admin"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "cjdns-bencode",
  "dirs",
+ "eyre",
  "hex",
  "rand 0.7.3",
  "regex",
@@ -1138,10 +1132,10 @@ dependencies = [
 name = "cjdns-bytes"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "base64 0.21.7",
  "byteorder",
  "cjdns-keys",
+ "eyre",
  "hex",
  "rand 0.7.3",
  "serde",
@@ -1188,8 +1182,8 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-sol-types",
- "anyhow",
  "cjdns-util",
+ "eyre",
  "futures-util",
  "rand 0.7.3",
  "serde",
@@ -1224,13 +1218,13 @@ dependencies = [
 name = "cjdns-nameserver"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "base64 0.21.7",
  "cjdns-bytes",
  "cjdns-eth-rpc",
  "cjdns-keys",
  "clap",
+ "eyre",
  "hex",
  "hickory-client",
  "hickory-server",
@@ -1244,7 +1238,6 @@ dependencies = [
 name = "cjdns-ptest"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "cjdns-admin",
  "cjdns-bytes",
  "cjdns-keys",
@@ -1252,6 +1245,7 @@ dependencies = [
  "cjdns-util",
  "cjdns-util-http",
  "env_logger",
+ "eyre",
  "log",
  "reqwest",
  "serde",
@@ -1265,13 +1259,13 @@ dependencies = [
 name = "cjdns-sniff"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "cjdns-admin",
  "cjdns-bencode",
  "cjdns-bytes",
  "cjdns-ctrl",
  "cjdns-hdr",
  "cjdns-keys",
+ "eyre",
  "hex",
  "log",
  "serde",
@@ -1284,7 +1278,6 @@ dependencies = [
 name = "cjdns-snode"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "chrono",
  "cjdns-admin",
  "cjdns-ann",
@@ -1298,6 +1291,7 @@ dependencies = [
  "cjdns-util",
  "clap",
  "env_logger",
+ "eyre",
  "futures",
  "hex",
  "http 1.1.0",
@@ -1333,7 +1327,7 @@ version = "0.1.0"
 name = "cjdns-util-http"
 version = "0.1.0"
 dependencies = [
- "anyhow",
+ "eyre",
  "serde",
  "serde_json",
  "warp",
@@ -1751,6 +1745,16 @@ checksum = "33d852cb9b869c2a9b3df2f71a3074817f01e1844f839a144f5fcef059a4eb5d"
 dependencies = [
  "libc",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "eyre"
+version = "0.6.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cd915d99f24784cdc19fd37ef22b97e3ff0ae756c7e492e9fbfe897d61e2aec"
+dependencies = [
+ "indenter",
+ "once_cell",
 ]
 
 [[package]]
@@ -2395,6 +2399,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "indenter"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
+
+[[package]]
 name = "indexmap"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2725,7 +2735,7 @@ version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "681030a937600a36906c185595136d26abfebb4aa9c65701cefcaf8578bb982b"
 dependencies = [
- "proc-macro-crate 1.3.1",
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 2.0.90",
@@ -2816,7 +2826,7 @@ version = "3.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d830939c76d294956402033aee57a6da7b438f2294eb94864c37b0569053a42c"
 dependencies = [
- "proc-macro-crate 3.1.0",
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 1.0.109",
@@ -2986,21 +2996,11 @@ dependencies = [
 
 [[package]]
 name = "proc-macro-crate"
-version = "1.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f4c021e1093a56626774e81216a4ce732a735e5bad4868a03f3ed65ca0c3919"
-dependencies = [
- "once_cell",
- "toml_edit 0.19.15",
-]
-
-[[package]]
-name = "proc-macro-crate"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d37c51ca738a55da99dc0c4a34860fd675453b8b36209178c2249bb13651284"
 dependencies = [
- "toml_edit 0.21.1",
+ "toml_edit",
 ]
 
 [[package]]
@@ -4098,17 +4098,6 @@ name = "toml_datetime"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3550f4e9685620ac18a50ed434eb3aec30db8ba93b0287467bca5826ea25baf1"
-
-[[package]]
-name = "toml_edit"
-version = "0.19.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b5bb770da30e5cbfde35a2d7b9b8a2c4b8ef89548a7a6aeab5c9a576e3e7421"
-dependencies = [
- "indexmap",
- "toml_datetime",
- "winnow 0.5.39",
-]
 
 [[package]]
 name = "toml_edit"

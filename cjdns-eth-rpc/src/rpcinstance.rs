@@ -5,7 +5,7 @@ use std::{
 };
 
 use alloy::primitives::Address;
-use anyhow::{bail, Result};
+use eyre::{bail, Result};
 
 use crate::types::GenericProvider;
 
