@@ -1,0 +1,14 @@
+[package]
+name = "cjdns-pns"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eyre = { workspace = true }
+alloy = { workspace = true }
+tokio = { workspace = true }
+itertools = { workspace = true }
+
+cjdns-pkt-abi = { workspace = true }
+cjdns-util = { workspace = true }
+cjdns-eth-rpc = { workspace = true }

@@ -1223,6 +1223,7 @@ dependencies = [
  "cjdns-bytes",
  "cjdns-eth-rpc",
  "cjdns-keys",
+ "cjdns-pns",
  "clap",
  "eyre",
  "hex",
@@ -1231,6 +1232,26 @@ dependencies = [
  "rand 0.7.3",
  "serde",
  "serde_yaml",
+ "tokio",
+]
+
+[[package]]
+name = "cjdns-pkt-abi"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+]
+
+[[package]]
+name = "cjdns-pns"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "cjdns-eth-rpc",
+ "cjdns-pkt-abi",
+ "cjdns-util",
+ "eyre",
+ "itertools 0.13.0",
  "tokio",
 ]
 

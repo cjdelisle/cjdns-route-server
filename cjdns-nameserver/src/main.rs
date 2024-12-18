@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap, net::SocketAddr, str::FromStr, sync::Arc, time::Duration
+    collections::HashMap, net::{Ipv4Addr, SocketAddr}, str::FromStr, sync::Arc, time::Duration
 };
 
 use eyre::{eyre, Context, Result};
@@ -16,7 +16,7 @@ use hickory_client::{
     udp::UdpClientConnection,
 };
 use hickory_server::{
-    authority::{Catalog, MessageResponseBuilder},
+    authority::MessageResponseBuilder,
     proto::{
         op::{Header, ResponseCode},
         rr::{
@@ -32,6 +32,7 @@ use tokio::{net::UdpSocket, sync::RwLock};
 use cjdns_eth_rpc::EthRpc;
 use cjdns_bytes::{dnsseed::{CjdnsPeer, CjdnsTxtRecord}, message::Message};
 use cjdns_keys::CJDNSPublicKey;
+use cjdns_pns::Pns;
 
 mod config;
 
@@ -46,25 +47,10 @@ async fn listen_dns() -> Result<()> {
         None
     };
 
-    let eth_rpc = cjdns_eth_rpc::EthRpc::new(&config.rpc).await?;
+    let eth_rpc = EthRpc::new(&config.rpc).await?;
+    let pns = Pns::new(eth_rpc).await?;
 
-    let mut catalog = Catalog::new();
-    // // for (domain, records) in config.zones().iter() {
-    //     let zone = rr::Name::parse("pkt.wiki.", None)?;
-    //     let ns = rr::Name::parse("loopy.pkteer.com.", None)?;
-    //     let mut authorities = InMemoryAuthority::empty(zone.clone(), ZoneType::Primary, false);
-    //     // for record in records.iter() {
-    //         // let r = record.try_into()?;
-    //         let mut r = Record::with(zone.clone(), RecordType::NS, 5);
-    //         r.set_data(Some(NS(ns.clone()).into_rdata()));
-    //         // r.set_data(rdata)
-    //         authorities.upsert_mut(r, 0);
-    //     // }
-    //     catalog.upsert(zone.clone().into(), Box::new(Arc::new(authorities)));
-    // // }
-
-    let catalog = Arc::new(RwLock::new(catalog));
-    let handler = ReqHandler::new(catalog, config, eth_rpc)?;
+    let handler = ReqHandler::new(config, pns)?;
     let mut sf = ServerFuture::new(handler);
     sf.register_socket(sock);
     if let Some(sock6) = sock6 {
@@ -77,7 +63,7 @@ async fn listen_dns() -> Result<()> {
 }
 
 impl ReqHandler {
-    fn new(catalog: Arc<RwLock<Catalog>>, config: NameserverConfig, eth_rpc: Arc<EthRpc>) -> Result<ReqHandler> {
+    fn new(config: NameserverConfig, pns: Arc<Pns>) -> Result<ReqHandler> {
         let name = rr::Name::parse(&config.my_name, None)
             .with_context(||format!("nameserver.yaml error: Unable to parse {} as a domain", config.my_name))?;
         let my_ipv4 = Record::from_rdata(
@@ -95,10 +81,14 @@ impl ReqHandler {
             rec
         });
         let mut nameservers = Vec::new();
-        for ns in &config.nameservers {
+        for (ns, ns_ipv4) in &config.nameservers {
             nameservers.push(
-                rr::Name::parse(ns, None)
-                    .with_context(||format!("nameserver.yaml error: Unable to parse {} as a domain", ns))?
+                (
+                    rr::Name::parse(ns, None)
+                        .with_context(||format!("nameserver.yaml error: Unable to parse {} as a domain", ns))?,
+                    ns_ipv4.parse()
+                        .with_context(||format!("nameserver.yaml error: Unable to parse {} as an IPv4", ns_ipv4))?,
+                )
             );
         }
         Ok(Self {
@@ -106,10 +96,9 @@ impl ReqHandler {
                 records: Default::default(),
                 nameservers,
             }),
-            catalog,
             my_ipv4,
             my_ipv6,
-            eth_rpc,
+            pns,
             config,
         })
     }
@@ -118,15 +107,14 @@ impl ReqHandler {
 #[derive(Default)]
 struct ReqHandlerMut {
     records: HashMap<(String,RecordType),Vec<Record>>,
-    nameservers: Vec<Name>,
+    nameservers: Vec<(Name,Ipv4Addr)>,
 }
 
 struct ReqHandler {
     m: RwLock<ReqHandlerMut>,
-    catalog: Arc<RwLock<Catalog>>,
     my_ipv4: Record,
     my_ipv6: Option<Record>,
-    eth_rpc: Arc<EthRpc>,
+    pns: Arc<Pns>,
     config: NameserverConfig,
 }
 
@@ -136,6 +124,7 @@ async fn respond_with_records<R: ResponseHandler>(
     answers: Vec<&Record>,
     name_servers: Vec<&Record>,
     soa: Vec<&Record>,
+    glue: Vec<&Record>,
 ) -> Result<ResponseInfo> {
     let mut hdr = Header::response_from_request(request.header());
     hdr.set_authoritative(true);
@@ -145,7 +134,7 @@ async fn respond_with_records<R: ResponseHandler>(
             answers,
             name_servers,
             soa,
-            &[], // additional
+            glue, // additional
         );
     match response_handle.send_response(resp).await {
         Ok(x) => {
@@ -167,6 +156,12 @@ fn serve_failed() -> ResponseInfo {
 fn nxdomain() -> ResponseInfo {
     let mut header = Header::new();
     header.set_response_code(ResponseCode::NXDomain);
+    header.into()
+}
+
+fn no_error() -> ResponseInfo {
+    let mut header = Header::new();
+    header.set_response_code(ResponseCode::NoError);
     header.into()
 }
 
@@ -195,100 +190,112 @@ impl RequestHandler for ReqHandler {
         println!("Query of type {} for {name} from {}", query.query_type(), request.request_info().src);
 
         // Self-request for our own IP
-        if query.query_type() == RecordType::A || query.query_type() == RecordType::AAAA &&
-            name.ends_with(&self.my_ipv4.name().to_ascii())
-        {
-            let mut recs = if query.query_type() == RecordType::A {
-                vec![self.my_ipv4.clone()]
-            } else if query.query_type() == RecordType::AAAA {
-                if let Some(ip6) = &self.my_ipv6 {
-                    vec![ip6.clone()]
+        if name.ends_with(&self.my_ipv4.name().to_ascii()) {
+            if query.query_type() == RecordType::A || query.query_type() == RecordType::AAAA {
+                let mut recs = if query.query_type() == RecordType::A {
+                    vec![self.my_ipv4.clone()]
+                } else if query.query_type() == RecordType::AAAA {
+                    if let Some(ip6) = &self.my_ipv6 {
+                        vec![ip6.clone()]
+                    } else {
+                        Vec::new()
+                    }
                 } else {
-                    Vec::new()
+                    unreachable!()
+                };
+                for r in &mut recs {
+                    r.set_name(query.name().into());
                 }
+                return if let Ok(res) = respond_with_records(
+                    request,
+                    response_handle,
+                    recs.iter().collect(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ).await {
+                    res
+                } else {
+                    serve_failed()
+                };
             } else {
-                unreachable!()
-            };
-            for r in &mut recs {
-                r.set_name(query.name().into());
+                return no_error();
             }
-            return if let Ok(res) = respond_with_records(
-                request,
-                response_handle,
-                recs.iter().collect(),
-                Vec::new(),
-                Vec::new(),
-            ).await {
-                res
-            } else {
-                serve_failed()
-            };
-        } else if query.query_type() == RecordType::SOA &&
-            query.name().num_labels() == 2 &&
-            name.starts_with("pkt.")
-        {
-            let soa = Record::from_rdata(
-                query.name().into(),
-                600,
-                SOA::new(
+        }
+        
+        if query.name().num_labels() == 2 && name.starts_with("pkt.") {
+            if query.query_type() == RecordType::SOA {
+                let soa = Record::from_rdata(
                     query.name().into(),
-                    Name::parse("domains.blockchain.project.pkt.", None).unwrap(),
-                    2024120300,
-                    3600,
-                    7200,
-                    604800,
-                    300,
-                ).into_rdata(),
-            );
-            return if let Ok(res) = respond_with_records(
-                request,
-                response_handle,
-                Vec::new(),
-                Vec::new(),
-                vec![&soa],
-            ).await {
-                res
-            } else {
-                serve_failed()
-            };
-        } else if query.query_type() == RecordType::NS &&
-            query.name().num_labels() == 2 &&
-            name.starts_with("pkt.")
-        {
-            let mut names = {
-                let m = self.m.read().await;
-                m.nameservers.clone()
-            };
-            if let Some(pfx) = self.config.special_ns_prefix.get(&name) {
-                for n in &mut names {
-                    let Ok(local) = Name::from_str(pfx) else {
-                        println!("{pfx} does not parse as a name");
-                        continue;
-                    };
-                    let Ok(pn) = local.append_name(&n) else {
-                        println!("Unable to prepend prefix {pfx} to name {n}");
-                        continue;
-                    };
-                    *n = pn;
+                    600,
+                    SOA::new(
+                        query.name().into(),
+                        Name::parse("domains.blockchain.project.pkt.", None).unwrap(),
+                        2024120300,
+                        3600,
+                        7200,
+                        604800,
+                        300,
+                    ).into_rdata(),
+                );
+                return if let Ok(res) = respond_with_records(
+                    request,
+                    response_handle,
+                    Vec::new(),
+                    Vec::new(),
+                    vec![&soa],
+                    Vec::new(),
+                ).await {
+                    res
+                } else {
+                    serve_failed()
+                };
+            } else if query.query_type() == RecordType::NS {
+                let mut names = {
+                    let m = self.m.read().await;
+                    m.nameservers.clone()
+                };
+                if let Some(pfx) = self.config.special_ns_prefix.get(&name) {
+                    for (n, _) in &mut names {
+                        let Ok(local) = Name::from_str(pfx) else {
+                            println!("{pfx} does not parse as a name");
+                            continue;
+                        };
+                        let Ok(pn) = local.append_name(&n) else {
+                            println!("Unable to prepend prefix {pfx} to name {n}");
+                            continue;
+                        };
+                        *n = pn;
+                    }
                 }
-            }
-            let recs = names.into_iter().map(|n|Record::from_rdata(
-                query.name().into(),
-                600,
-                NS(n).into_rdata(),
-            )).collect::<Vec<_>>();
-            return if let Ok(res) = respond_with_records(
-                request,
-                response_handle,
-                Vec::new(),
-                recs.iter().collect(),
-                Vec::new(),
-            ).await {
-                res
+                let recs = names.iter().map(|(n,_)|Record::from_rdata(
+                    query.name().into(),
+                    600,
+                    NS(n.clone()).into_rdata(),
+                )).collect::<Vec<_>>();
+                let glue = names.iter().map(|(n,ip)|Record::from_rdata(
+                    n.clone(),
+                    600,
+                    A(ip.clone()).into_rdata(),
+                )).collect::<Vec<_>>();
+                return if let Ok(res) = respond_with_records(
+                    request,
+                    response_handle,
+                    Vec::new(),
+                    recs.iter().collect(),
+                    Vec::new(),
+                    glue.iter().collect(),
+                ).await {
+                    res
+                } else {
+                    serve_failed()
+                };
             } else {
-                serve_failed()
-            };
-        } else if let Some(mut path) = extract_subdomains(&name) {
+                return no_error();
+            }
+        }
+        
+        if let Some(mut path) = extract_subdomains(&name) {
             // my.project.pkt.xyz
             // ["my","project","xyz"]
             if path.len() == 1 {
@@ -314,6 +321,7 @@ impl RequestHandler for ReqHandler {
                 recs.iter().collect(),
                 Vec::new(),
                 Vec::new(),
+                Vec::new(),
             ).await {
                 res
             } else {
@@ -321,12 +329,8 @@ impl RequestHandler for ReqHandler {
             };
         }
 
-        // If it's not an NS query or doesn't match the pattern, pass it to the catalog
-        self.catalog
-            .read()
-            .await
-            .handle_request(request, response_handle)
-            .await
+        // Anything else is nxdomain
+        nxdomain()
     }
 }
 

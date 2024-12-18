@@ -11,8 +11,8 @@ my_name: "pns.mydomainname.tld."
 bind_ipv4: "127.0.0.1:9876"
 
 nameservers:
-  - "pns.cjdns.fr."
-  - "pns.pkteer.com."
+  - ["pns.cjdns.fr.", "5.135.140.105"]
+  - ["pns.pkteer.com.", "192.99.160.99"]
 
 special_ns_prefix:
   pkt.management: ns69

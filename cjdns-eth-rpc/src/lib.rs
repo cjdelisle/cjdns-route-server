@@ -131,14 +131,13 @@ impl EthRpc {
         }
         Ok(())
     }
-    pub async fn read_eth<Y,FY,F,E>(
+    pub async fn read_eth<Y,FY,F>(
         &self,
         f: F,
     ) -> Result<Y>
         where
-            F: Fn(RpcInstance<AlloyFilledProvider>) -> FY,
-            FY: IntoFuture<Output=Result<Y,E>>,
-            E: Into<eyre::Error>,
+            F: Fn(AlloyFilledProvider) -> FY,
+            FY: IntoFuture<Output=eyre::Result<Y>>,
     {
         let mut i = 0;
         loop {
@@ -146,7 +145,7 @@ impl EthRpc {
             let (rpc, rpc_info) = self.rpc(mk_provider).await?;
             let _provider = rpc.provider.clone();
             tokio::select! {
-                res = f(rpc).into_future() => {
+                res = f(rpc.provider).into_future() => {
                     match res {
                         Err(e) => {
                             error::handle_generic_error(e.into(), i, &rpc_info).await?;

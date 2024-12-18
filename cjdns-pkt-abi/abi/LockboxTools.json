@@ -1,0 +1,36 @@
+[
+    {
+        "inputs": [
+            {
+                "internalType": "contract ILockBox",
+                "name": "boxAddr",
+                "type": "address"
+            },
+            {
+                "internalType": "uint32[]",
+                "name": "ids",
+                "type": "uint32[]"
+            },
+            {
+                "internalType": "string[]",
+                "name": "kvKeys",
+                "type": "string[]"
+            }
+        ],
+        "name": "getLockups",
+        "outputs": [
+            {
+                "internalType": "bytes[]",
+                "name": "data",
+                "type": "bytes[]"
+            },
+            {
+                "internalType": "bytes[][]",
+                "name": "kvValues",
+                "type": "bytes[][]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]

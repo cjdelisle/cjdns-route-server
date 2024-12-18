@@ -39,45 +39,15 @@ impl RpcInfo {
     }
 }
 
-#[derive(Default)]
-struct RpcInstanceMut {
-    contracts: HashMap<Address, Box<dyn Any + Send + Sync>>,
-}
-
 pub struct RpcInstance<P: GenericProvider> {
-    m: Option<RpcInstanceMut>,
     pub provider: P,
     pub name: String,
 }
 impl<P: GenericProvider> RpcInstance<P> {
     pub fn new(info: &Arc<RpcInfo>, provider: P) -> Result<Self> {
         Ok(Self {
-            m: Some(Default::default()),
             provider,
             name: info.http.chars().take(25).collect(),
         })
-    }
-    pub fn contract<T>(
-        &mut self,
-        address: Address,
-        f: fn(a: Address, p: P) -> T,
-    ) -> Result<&T>
-        where T: 'static + Send + Sync
-    {
-        if self.m.as_ref().unwrap().contracts.get(&address).is_none() {
-            let mut m = self.m.take().unwrap();
-            m.contracts.insert(address.clone(), Box::new(f(address.clone(), self.provider.clone())));
-            self.m = Some(m);
-        }
-        if let Some(contract) = self.m.as_ref().unwrap().contracts.get(&address) {
-            match contract.downcast_ref::<T>() {
-                Some(t) => Ok(t),
-                None => {
-                    bail!("Downcast failed");
-                }
-            }
-        } else {
-            bail!("No such token");
-        }
     }
 }

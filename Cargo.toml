@@ -20,6 +20,8 @@ members = [
     "cjdns-util",
     "cjdns-util-http",
     "cjdns-eth-rpc",
+    "cjdns-pns",
+    "cjdns-pkt-abi",
 ]
 
 [workspace.dependencies]
@@ -60,6 +62,7 @@ async-trait = "0.1.83"
 alloy = { git = "https://github.com/alloy-rs/alloy", version = "0.6.4", rev = "v0.6.4", features = ["full","signer-mnemonic"] }
 alloy-sol-types = "0.8.0"
 futures-util = "0.3"
+itertools = "0.13.0"
 
 cjdns-admin = { path = "cjdns-admin" }
 cjdns-ann = { path = "cjdns-ann" }
@@ -76,3 +79,5 @@ cjdns-snode-wire = { path = "cjdns-snode-wire" }
 cjdns-util = { path = "cjdns-util" }
 cjdns-util-http = { path = "cjdns-util-http" }
 cjdns-eth-rpc = { path = "cjdns-eth-rpc" }
+cjdns-pns = { path = "cjdns-pns" }
+cjdns-pkt-abi = { path = "cjdns-pkt-abi" }

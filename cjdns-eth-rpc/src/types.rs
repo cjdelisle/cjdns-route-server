@@ -19,8 +19,8 @@ pub type AlloyProviderWs = alloy::providers::RootProvider<AlloyTransportWs>;
 
 pub type AlloyEvent<'a,X> = Event<AlloyTransportWs,&'a AlloyProviderWs,X,AlloyNetwork>;
 
-pub trait GenericProvider: Provider<AlloyTransport, AlloyNetwork> + Clone {}
-impl<X> GenericProvider for X where X: Provider<AlloyTransport, AlloyNetwork> + Clone {}
+pub trait GenericProvider: 'static + Provider<AlloyTransport, AlloyNetwork> + Clone {}
+impl<X> GenericProvider for X where X: 'static + Provider<AlloyTransport, AlloyNetwork> + Clone {}
 
 pub type AlloyFilledProvider = FillProvider<
     JoinFill<
