@@ -40,6 +40,11 @@ async fn listen_dns() -> Result<()> {
         .context("Failed to read config: nameserver.yaml")?;
     let config: NameserverConfig = serde_yaml::from_str(&config)?;
     let sock = UdpSocket::bind(config.bind_ipv4).await?;
+    let sock6 = if let Some(bind_ipv6) = config.bind_ipv6 {
+        Some(UdpSocket::bind(bind_ipv6).await?)
+    } else {
+        None
+    };
 
     let eth_rpc = cjdns_eth_rpc::EthRpc::new(&config.rpc).await?;
 
@@ -62,6 +67,9 @@ async fn listen_dns() -> Result<()> {
     let handler = ReqHandler::new(catalog, config, eth_rpc)?;
     let mut sf = ServerFuture::new(handler);
     sf.register_socket(sock);
+    if let Some(sock6) = sock6 {
+        sf.register_socket(sock6);
+    }
 
     tokio::time::sleep(Duration::from_secs(u64::MAX)).await;
 
