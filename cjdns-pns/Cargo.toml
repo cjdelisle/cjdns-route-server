@@ -9,6 +9,7 @@ alloy = { workspace = true }
 tokio = { workspace = true }
 itertools = { workspace = true }
 hickory-server = { workspace = true }
+serde = { workspace = true }
 
 cjdns-pkt-abi = { workspace = true }
 cjdns-util = { workspace = true }

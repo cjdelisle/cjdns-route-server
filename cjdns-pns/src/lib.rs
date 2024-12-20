@@ -6,7 +6,9 @@ use std::{
 };
 use alloy::primitives::{Address, Bytes, B256, U256};
 
-use eyre::{bail, Result};
+use eyre::{bail, eyre, Result};
+use hickory_server::proto::rr::{Name, Record, RecordType};
+use record::decode_records;
 use tokio::sync::{broadcast::channel, Mutex};
 use itertools::Itertools;
 
@@ -19,7 +21,7 @@ pub mod record;
 // Aligned with the PNS contract
 const PREREG_LIFETIME_SECONDS: u64 = 60*60*24;
 
-const SPECIAL_DOMAINS: &'static [&str] = &[
+pub const SPECIAL_DOMAINS: &'static [&str] = &[
     "www",
     "status",
     "m",
@@ -41,11 +43,58 @@ const SPECIAL_DOMAINS: &'static [&str] = &[
     "_dmarc",
 ];
 
+#[derive(Clone)]
 pub struct Domain {
     pub id: u64,
     pub d: IPNS::Domain,
+    /// Records stored by domain, in the case of e.g. cjd.pkt, the records are stored under "cjd"
+    /// The Name in the record value is not correct.
+    pub records: HashMap<String,Vec<Record>>,
 }
 impl Domain {
+    pub fn new(id: u64, d: IPNS::Domain) -> Self {
+        let mut out = Self {
+            id,
+            d,
+            records: HashMap::new(),
+        };
+        out.update_records();
+        out
+    }
+    pub fn update_records(&mut self) {
+        self.records = match decode_records(&self.d.records) {
+            Ok(recs) => {
+                // We need to take the NAME of the domain and append it to the records so
+                // we can just scan and match.
+                match Name::from_utf8(&self.name()) {
+                    Ok(name) => {
+                        let mut out_recs: HashMap<String, Vec<Record>> = HashMap::new();
+                        for r in recs.into_iter() {
+                            match r.name().clone().append_name(&name) {
+                                Err(e) => {
+                                    println!("Error appending name to record for domain {}: {e}", self.name());
+                                }
+                                Ok(n) => {
+                                    let ns = n.to_string();
+                                    println!("Has record: {ns} of type {}", r.record_type());
+                                    out_recs.entry(ns).or_default().push(r);
+                                }
+                            }
+                        }
+                        out_recs
+                    }
+                    Err(e) => {
+                        println!("Error decoding name for domain {}: {e}", self.name());
+                        HashMap::new()
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Error decoding records for domain {}: {e}", self.id);
+                HashMap::new()
+            }
+        };
+    }
     pub fn name(&self) -> String {
         String::from_utf8_lossy(&self.d.name.to_vec()).to_string()
     }
@@ -184,6 +233,37 @@ impl Pns {
             Ok((is_authorized, is_enforcing))
         }).await
     }
+
+    // Error = internal error
+    // None = NxDomain
+    // Some(empty) = No records
+    pub async fn get_records(self: &Arc<Self>, name: &Name, t: RecordType) -> Result<Option<Vec<Record>>> {
+        // TODO: If name is reserved or empty, resolve based on the name registered to the TLD
+        let sname = name.to_string();
+        let Ok((sub, _tld)) = parse_name(&sname) else {
+            return Ok(None);
+        };
+        println!("Searching records for name: {sub}");
+        self.with_domains(|doms|{
+            let mut out = Vec::new();
+            for dom in doms.values() {
+                // println!(" - Checking domain {}", dom.name());
+                if let Some(recs) = dom.records.get(sub) {
+                    println!("  - {} possible records found", recs.len());
+                    for rec in recs {
+                        if rec.record_type() == t || t.is_any() {
+                            let mut recc = rec.clone();
+                            println!("  - Found record: {recc:?}");
+                            recc.set_name(name.clone());
+                            out.push(recc);
+                        }
+                    }
+                    return Ok(Some(out));
+                }
+            }
+            Ok(None)
+        }).await
+    }
 }
 
 const UNITS_PER_REQ: usize = 16;
@@ -201,7 +281,7 @@ async fn get_all_domains(inf: &Arc<Pns>) -> Result<HashMap<u64,Arc<Domain>>> {
             let x = pns.getDomains(v.clone()).call().await?;
             for (d, id) in x.out.into_iter().zip(v.into_iter()) {
                 if d.owner > 0 {
-                    out.insert(id, Arc::new(Domain{ id, d }));
+                    out.insert(id, Arc::new(Domain::new(id, d)));
                 }
             }
         }
@@ -279,16 +359,13 @@ async fn filter_register_domain(srv: &Arc<Pns>) -> Result<()> {
         PnsContract::new,
         |pns| pns.Register_filter(),
         |srv, reg, log| async move {
-            let u = Arc::new(Domain {
-                d: IPNS::Domain {
-                    owner: reg.lockupId,
-                    name: reg.name,
-                    records: reg.records,
-                    subdomains: 0,
-                    blacklisted: false,
-                },
-                id: reg.id,
-            });
+            let u = Arc::new(Domain::new(reg.id, IPNS::Domain {
+                owner: reg.lockupId,
+                name: reg.name,
+                records: reg.records,
+                subdomains: 0,
+                blacklisted: false,
+            }));
             println!("TX {:?} Register({}({})) BY: {} {}",
                 log.transaction_hash,
                 u.d.name,
@@ -325,11 +402,9 @@ async fn filter_update_records(srv: &Arc<Pns>) -> Result<()> {
                 "UpdateRecords/with_domains",
                 srv.with_domains(move |units| {
                     if let Some(d) = units.get_mut(&ur.id) {
-                        let mut dd = Domain{
-                            id: d.id,
-                            d: d.d.clone(),
-                        };
+                        let mut dd = Domain::clone(&*d);
                         dd.d.records = ur.records;
+                        dd.update_records();
                         *d = Arc::new(dd);
                         Ok(())
                     } else {
@@ -360,10 +435,7 @@ async fn filter_takeover(srv: &Arc<Pns>) -> Result<()> {
                 "Takeover/with_domains",
                 srv.with_domains(move |units| {
                     if let Some(d) = units.get_mut(&takeover.id) {
-                        let mut dd = Domain{
-                            id: d.id,
-                            d: d.d.clone(),
-                        };
+                        let mut dd = Domain::clone(&*d);
                         dd.d.owner = takeover.newLockupId;
                         dd.d.records = takeover.records;
                         *d = Arc::new(dd);
@@ -396,20 +468,14 @@ async fn filter_create_subdomain(srv: &Arc<Pns>) -> Result<()> {
                 "CreateSubdomain/with_domains",
                 srv.with_domains(move |units| {
                     if let Some(parent_domain) = units.get_mut(&cs.parentId) {
-                        let new_subdomain = Domain {
-                            d: IPNS::Domain {
-                                owner: cs.parentId,
-                                name: cs.name,
-                                records: cs.records,
-                                subdomains: 0xff, // ff = we ARE a subdomain
-                                blacklisted: parent_domain.d.blacklisted,
-                            },
-                            id: cs.id,
-                        };
-                        let mut pd = Domain {
-                            d: parent_domain.d.clone(),
-                            id: parent_domain.id,
-                        };
+                        let new_subdomain = Domain::new(cs.id, IPNS::Domain {
+                            owner: cs.parentId,
+                            name: cs.name,
+                            records: cs.records,
+                            subdomains: 0xff, // ff = we ARE a subdomain
+                            blacklisted: parent_domain.d.blacklisted,
+                        });
+                        let mut pd = Domain::clone(&*parent_domain);
                         pd.d.subdomains += 1;
                         *parent_domain = Arc::new(pd);
                         units.insert(cs.id, Arc::new(new_subdomain));
@@ -443,10 +509,7 @@ async fn filter_destroy(srv: &Arc<Pns>) -> Result<()> {
                         if domain.d.subdomains == 0xff {
                             // This is a subdomain, so we need to decrement the subdomains count of its parent
                             if let Some(parent_domain) = units.get_mut(&domain.d.owner) {
-                                let mut parentd = Domain{
-                                    d: parent_domain.d.clone(),
-                                    id: parent_domain.id,
-                                };
+                                let mut parentd = Domain::clone(&*parent_domain);
                                 parentd.d.subdomains -= 1;
                                 *parent_domain = Arc::new(parentd);
                             } else {
@@ -481,10 +544,7 @@ async fn filter_blacklist(srv: &Arc<Pns>) -> Result<()> {
                 "Blacklist/with_domains",
                 srv.with_domains(move |units| {
                     if let Some(domain) = units.get_mut(&blacklist.id) {
-                        let mut dd = Domain{
-                            id: domain.id,
-                            d: domain.d.clone(),
-                        };
+                        let mut dd = Domain::clone(&*domain);
                         dd.d.blacklisted = blacklist.isBlacklisted;
                         *domain = Arc::new(dd);
                         Ok(())
@@ -531,4 +591,57 @@ async fn filter_destroy_prereg(srv: &Arc<Pns>) -> Result<()> {
             Ok::<(),eyre::ErrReport>(())
         }
     ).await
+}
+
+fn parse_name(name: &str) -> Result<(&str, Option<&str>)> {
+    let name = if let Some(name) = name.strip_suffix(".") {
+        name
+    } else {
+        name
+    };
+    if let Some(name) = name.strip_suffix(".pkt") {
+        // It's a bare .pkt name
+        Ok((name, None))
+    } else {
+        // It's a subdomain
+        let mut parts = name.split('.').rev();
+        let tld = parts.next().ok_or_else(||eyre!("name: {name} is empty"))?;
+        let pkt = parts.next().ok_or_else(||eyre!("name {name} has only one label"))?;
+        if pkt != "pkt" {
+            bail!("Name does not end in .pkt");
+        }
+        let Some(sub) = name.strip_suffix(&format!("pkt.{tld}")) else {
+            bail!("strip_suffix failed on name {name}");
+        };
+        if sub == "" {
+            Ok((sub, Some(tld)))
+        } else {
+            let Some(sub) = sub.strip_suffix('.') else {
+                bail!("strip_suffix '.' failed on name {name}");
+            };
+            Ok((sub, Some(tld)))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_name() {
+        assert_eq!(parse_name("foo.pkt.").unwrap(), ("foo", None));
+        assert_eq!(parse_name("foo.pkt").unwrap(), ("foo", None));
+        assert_eq!(parse_name("foo.bar.pkt").unwrap(), ("foo.bar", None));
+        assert_eq!(parse_name("foo.bar.pkt.").unwrap(), ("foo.bar", None));
+        assert_eq!(parse_name("foo.pkt.xyz").unwrap(), ("foo", Some("xyz")));
+        assert_eq!(parse_name("foo.pkt.xyz.").unwrap(), ("foo", Some("xyz")));
+        assert_eq!(parse_name("pkt.xyz").unwrap(), ("", Some("xyz")));
+        assert_eq!(parse_name("pkt.xyz.").unwrap(), ("", Some("xyz")));
+
+        assert!(parse_name("xxx").is_err());
+        assert!(parse_name("pkt.xxx.yy").is_err());
+        assert!(parse_name("pkt.xxx.yy.").is_err());
+        assert!(parse_name("xx.pkt.xxx.yy").is_err());
+    }
 }

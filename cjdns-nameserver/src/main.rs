@@ -1,8 +1,11 @@
 use std::{
-    collections::HashMap, net::{Ipv4Addr, SocketAddr}, str::FromStr, sync::Arc, time::Duration
+    net::{Ipv4Addr, SocketAddr},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
 };
 
-use eyre::{eyre, Context, Result};
+use eyre::{bail, eyre, Context, Result};
 use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
 use clap::{Arg, Command, parser::ValuesRef};
 use config::NameserverConfig;
@@ -32,7 +35,7 @@ use tokio::{net::UdpSocket, sync::RwLock};
 use cjdns_eth_rpc::EthRpc;
 use cjdns_bytes::{dnsseed::{CjdnsPeer, CjdnsTxtRecord}, message::Message};
 use cjdns_keys::CJDNSPublicKey;
-use cjdns_pns::Pns;
+use cjdns_pns::{record, Pns};
 
 mod config;
 
@@ -93,7 +96,6 @@ impl ReqHandler {
         }
         Ok(Self {
             m: RwLock::new(ReqHandlerMut{
-                records: Default::default(),
                 nameservers,
             }),
             my_ipv4,
@@ -106,7 +108,6 @@ impl ReqHandler {
 
 #[derive(Default)]
 struct ReqHandlerMut {
-    records: HashMap<(String,RecordType),Vec<Record>>,
     nameservers: Vec<(Name,Ipv4Addr)>,
 }
 
@@ -125,7 +126,7 @@ async fn respond_with_records<R: ResponseHandler>(
     name_servers: Vec<&Record>,
     soa: Vec<&Record>,
     glue: Vec<&Record>,
-) -> Result<ResponseInfo> {
+) -> ResponseInfo {
     let mut hdr = Header::response_from_request(request.header());
     hdr.set_authoritative(true);
     let resp =
@@ -137,44 +138,31 @@ async fn respond_with_records<R: ResponseHandler>(
             glue, // additional
         );
     match response_handle.send_response(resp).await {
-        Ok(x) => {
-            Ok(x)
-        }
+        Ok(x) => { x }
         Err(e) => {
-            println!("Error crafting A response: {e}");
-            Err(e.into())
+            println!("Error crafting response: {e}");
+            hdr.into()
         }
     }
 }
 
-fn serve_failed() -> ResponseInfo {
-    let mut header = Header::new();
-    header.set_response_code(ResponseCode::ServFail);
-    header.into()
-}
-
-fn nxdomain() -> ResponseInfo {
-    let mut header = Header::new();
-    header.set_response_code(ResponseCode::NXDomain);
-    header.into()
-}
-
-fn no_error() -> ResponseInfo {
-    let mut header = Header::new();
-    header.set_response_code(ResponseCode::NoError);
-    header.into()
-}
-
-fn extract_subdomains(domain: &str) -> Option<Vec<String>> {
-    let parts: Vec<&str> = domain.split('.').collect();
-    if parts.len() >= 2 && parts[parts.len() - 2].eq_ignore_ascii_case("pkt") {
-        Some(parts
-            .into_iter()
-            .filter(|&part| !part.eq_ignore_ascii_case("pkt"))
-            .map(|part| part.to_string())
-            .collect())
-    } else {
-        None
+async fn respond<R: ResponseHandler>(request: &Request, mut response_handle: R, code: ResponseCode) -> ResponseInfo {
+    let mut hdr = Header::response_from_request(request.header());
+    hdr.set_response_code(code);
+    let resp =
+        MessageResponseBuilder::from_message_request(request).build(
+            hdr,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+    match response_handle.send_response(resp).await {
+        Ok(x) => { x }
+        Err(e) => {
+            println!("Error crafting {code} response: {e}");
+            hdr.into()
+        }
     }
 }
 
@@ -206,20 +194,16 @@ impl RequestHandler for ReqHandler {
                 for r in &mut recs {
                     r.set_name(query.name().into());
                 }
-                return if let Ok(res) = respond_with_records(
+                return respond_with_records(
                     request,
                     response_handle,
                     recs.iter().collect(),
                     Vec::new(),
                     Vec::new(),
                     Vec::new(),
-                ).await {
-                    res
-                } else {
-                    serve_failed()
-                };
+                ).await;
             } else {
-                return no_error();
+                return respond(request, response_handle, ResponseCode::NoError).await
             }
         }
         
@@ -238,18 +222,14 @@ impl RequestHandler for ReqHandler {
                         300,
                     ).into_rdata(),
                 );
-                return if let Ok(res) = respond_with_records(
+                return respond_with_records(
                     request,
                     response_handle,
                     Vec::new(),
                     Vec::new(),
                     vec![&soa],
                     Vec::new(),
-                ).await {
-                    res
-                } else {
-                    serve_failed()
-                };
+                ).await;
             } else if query.query_type() == RecordType::NS {
                 let mut names = {
                     let m = self.m.read().await;
@@ -278,59 +258,41 @@ impl RequestHandler for ReqHandler {
                     600,
                     A(ip.clone()).into_rdata(),
                 )).collect::<Vec<_>>();
-                return if let Ok(res) = respond_with_records(
+                return respond_with_records(
                     request,
                     response_handle,
                     recs.iter().collect(),
                     Vec::new(),
                     Vec::new(),
                     glue.iter().collect(),
-                ).await {
-                    res
-                } else {
-                    serve_failed()
-                };
+                ).await;
             } else {
-                return no_error();
+                return respond(request, response_handle, ResponseCode::NoError).await;
             }
-        }
-        
-        if let Some(mut path) = extract_subdomains(&name) {
-            // my.project.pkt.xyz
-            // ["my","project","xyz"]
-            if path.len() == 1 {
-                // We need to map pkt.xxx to whatever domain the owner of .xxx wants
-                return nxdomain();
-            }
-            // We don't care what the top level domain is
-            path.pop();
-            let key = path.join(".");
-            let mut recs = {
-                let m = self.m.read().await;
-                let Some(recs) = m.records.get(&(key,query.query_type())) else {
-                    return nxdomain();
-                };
-                recs.clone()
-            };
-            for r in &mut recs {
-                r.set_name(query.name().into());
-            }
-            return if let Ok(res) = respond_with_records(
-                request,
-                response_handle,
-                recs.iter().collect(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ).await {
-                res
-            } else {
-                serve_failed()
-            };
         }
 
-        // Anything else is nxdomain
-        nxdomain()
+        let nname: Name = query.name().into();
+        match self.pns.get_records(&nname, query.query_type()).await {
+            Err(e) => {
+                println!("Error querying PNS: {e}");
+                respond(request, response_handle, ResponseCode::ServFail).await
+            }
+            Ok(None) => {
+                println!("Reply NXDOMAIN");
+                respond(request, response_handle, ResponseCode::NXDomain).await
+            }
+            Ok(Some(recs)) => {
+                println!("Reply records {}", recs.len());
+                respond_with_records(
+                    request,
+                    response_handle,
+                    recs.iter().collect(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                ).await
+            }
+        }
     }
 }
 
@@ -378,6 +340,17 @@ async fn async_main() -> Result<()> {
                 .arg(
                     Arg::new("peer")
                         .help("An encoded peer credential")
+                        .num_args(1..)
+                        .required(true),
+                )
+        )
+        .subcommand(
+            Command::new("record")
+                .about("Create a binary encoded record from text")
+                .arg(
+                    Arg::new("record")
+                        .help(concat!("The record text representation in the form of ",
+                            "type:name:ttl:value e.g. A:example.com:300:1.2.3.4"))
                         .num_args(1..)
                         .required(true),
                 )
@@ -502,6 +475,25 @@ async fn async_main() -> Result<()> {
         }
     } else if let Some(_) = matches.subcommand_matches("serve") {
         listen_dns().await?
+    } else if let Some(matches) = matches.subcommand_matches("record") {
+        let recs = matches.get_many::<String>("record").expect("Missing record");
+        let mut rv = Vec::new();
+        for rec in recs {
+            let parts: Vec<&str> = rec.split(':').collect();
+            if parts.len() != 4 {
+                bail!("Record must have 4 parts: type:name:ttl:value");
+            }
+            let r = record::JsonRecord{
+                rtype: parts[0].to_string(),
+                name: parts[1].to_string(),
+                value: parts[3].to_string(),
+                ttl_sec: parts[2].parse().expect("TTL must be a number"),
+            };
+            let r: Record = (&r).try_into().context("Unable to parse record")?;
+            rv.push(r);
+        }
+        let enc = record::encode_records(&rv)?;
+        println!("Encoded records: 0x{}", hex::encode(&enc));
     } else {
         println!("Not a valid command, try --help");
     }
@@ -519,24 +511,4 @@ fn main() -> Result<()> {
         .build()
         .unwrap();
     runtime.block_on(async_main())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_subdomains() {
-        // Test cases where the function should return Some
-        assert_eq!(extract_subdomains("abcd.pkt.xyz"), Some(vec!["abcd".to_string(), "xyz".to_string()]));
-        assert_eq!(extract_subdomains("defg.hijk.pkt.com"), Some(vec!["defg".to_string(), "hijk".to_string(), "com".to_string()]));
-        assert_eq!(extract_subdomains("pkt.com"), Some(vec!["com".to_string()]));
-
-        // Test cases where the function should return None
-        assert_eq!(extract_subdomains("example.com"), None);
-        assert_eq!(extract_subdomains("test.pkt"), None); // Missing TLD after pkt
-        assert_eq!(extract_subdomains("too.short"), None); // Not enough parts
-        assert_eq!(extract_subdomains("pkt.example.com"), None); // "pkt" not at the second to last position
-        assert_eq!(extract_subdomains("a.b.c.d.pkt"), None); // Needs a TLD after "pkt"
-    }
 }

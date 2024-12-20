@@ -1,17 +1,22 @@
 use std::str::FromStr;
 
 use cjdns_bytes::tlv::{encode_tlv, parse_tlv};
-use eyre::{bail, Result};
+use eyre::{bail, Context, OptionExt, Result};
 use hickory_server::proto::{
     rr::{
-        rdata::{A,AAAA, CNAME, NS, TXT},
-        Record,
+        rdata::TXT,
         Name,
+        RData,
+        Record,
         RecordData,
+        RecordType,
     },
-    serialize::binary::{BinDecodable,BinEncodable},
+    serialize::{
+        binary::{BinDecodable,BinEncodable},
+        txt::RDataParser,
+    },
 };
-
+use serde::{Deserialize, Serialize};
 
 pub const RECORD_TYPES: &'static [&'static str] = &[
     "A",
@@ -23,25 +28,48 @@ pub const RECORD_TYPES: &'static [&'static str] = &[
     "TXT",
 ];
 
-struct JsonRecord {
-    rtype: String,
-    name: String,
-    value: String,
-    ttl_sec: u32,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct JsonRecord {
+    pub rtype: String,
+    pub name: String,
+    pub value: String,
+    pub ttl_sec: u32,
 }
-
-pub fn parse_record_str(rtype: &str, name: &str, value: &str, ttl_sec: u32) -> Result<Record> {
-    let name = Name::from_str(name)?;
+impl TryFrom<&JsonRecord> for Record {
+    type Error = eyre::Error;
+    fn try_from(jr: &JsonRecord) -> Result<Self> {
+        parse_record_str(&jr.rtype, &jr.name, &jr.value, jr.ttl_sec)
+    }
+}
+impl TryFrom<&Record> for JsonRecord {
+    type Error = eyre::Error;
+    fn try_from(r: &Record) -> Result<Self> {
+        let name = r.name().to_string();
+        let name = if name.is_empty() {
+            "@".to_string()
+        } else {
+            name
+        };
+        Ok(JsonRecord {
+            rtype: r.record_type().to_string(),
+            name,
+            value: r.data().ok_or_eyre("Record has no RData")?.to_string(),
+            ttl_sec: r.ttl(),
+        })
+    }
+}
+fn parse_record_str(rtype: &str, name: &str, value: &str, ttl_sec: u32) -> Result<Record> {
+    let name = if name == "@" {
+        Name::from_str("").context("Unable to parse record name: @")?
+    } else {
+        Name::from_str(name).with_context(||format!("Unable to parse record name: {name}"))?
+    };
     let out = match rtype {
-        "A" => A::from_str(value)?.into_rdata(),
-        "AAAA" => AAAA::from_str(value)?.into_rdata(),
-        // "CAA" => CAA::from_str(s)?.into_rdata(),
-        "CNAME" => CNAME(Name::parse(value, None)?).into_rdata(),
-        "NS" => NS(Name::parse(value, None)?).into_rdata(),
-        // "SRV" => SRV::
+        // If you don't manual encode the TXT record, spaces get stripped.
         "TXT" => TXT::from_bytes(vec![value.as_bytes()]).into_rdata(),
         other_type => {
-            bail!("Unsupported record type {other_type}");
+            let rt = RecordType::from_str(other_type)?;
+            RData::try_from_str(rt, value)?
         }
     };
     Ok(Record::from_rdata(name, ttl_sec, out))
@@ -51,7 +79,7 @@ pub fn parse_record_str(rtype: &str, name: &str, value: &str, ttl_sec: u32) -> R
 // It's just a courtaesy to avoid confusion.
 pub const RECORD: u8 = 0x05;
 
-pub fn parse_records_bytes(bytes: &[u8]) -> Result<Vec<Record>> {
+pub fn decode_records(bytes: &[u8]) -> Result<Vec<Record>> {
     let recs = parse_tlv(bytes)?;
     let mut out = Vec::new();
     for (t, elem) in recs {
@@ -69,4 +97,60 @@ pub fn encode_records(records: &[Record]) -> Result<Vec<u8>> {
         out.push((RECORD, rec.to_bytes()?));
     }
     Ok(encode_tlv(&out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn roundtrip_test(jr: &JsonRecord) {
+        let rec: Record = jr.try_into().unwrap();
+        let enc = encode_records(&[rec.clone()]).unwrap();
+        println!("{rec:?}");
+        let dec = decode_records(&enc).unwrap();
+        assert_eq!(dec.len(), 1);
+        assert_eq!(dec[0], rec);
+        let jr2: JsonRecord = (&rec).try_into().unwrap();
+        assert_eq!(jr, &jr2);
+    }
+
+    #[test]
+    fn test_record_parse() {
+        roundtrip_test(&JsonRecord {
+            rtype: "A".to_string(),
+            name: "example.com".to_string(),
+            value: "1.2.3.4".to_string(),
+            ttl_sec: 300,
+        });
+        roundtrip_test(&JsonRecord {
+            rtype: "AAAA".to_string(),
+            name: "abcd".to_string(),
+            value: "2001:1:22:333::".to_string(),
+            ttl_sec: 400,
+        });
+        roundtrip_test(&JsonRecord {
+            rtype: "CNAME".to_string(),
+            name: "helloworld".to_string(),
+            value: "example.com".to_string(),
+            ttl_sec: 400,
+        });
+        roundtrip_test(&JsonRecord {
+            rtype: "NS".to_string(),
+            name: "test".to_string(),
+            value: "ns1.example.com".to_string(),
+            ttl_sec: 400,
+        });
+        roundtrip_test(&JsonRecord {
+            rtype: "TXT".to_string(),
+            name: "txtrec".to_string(),
+            value: "This is a text rec".to_string(),
+            ttl_sec: 400,
+        });
+        roundtrip_test(&JsonRecord {
+            rtype: "TXT".to_string(),
+            name: "@".to_string(),
+            value: "This is a text rec".to_string(),
+            ttl_sec: 400,
+        });
+    }
 }
