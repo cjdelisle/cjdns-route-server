@@ -1247,10 +1247,12 @@ name = "cjdns-pns"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "cjdns-bytes",
  "cjdns-eth-rpc",
  "cjdns-pkt-abi",
  "cjdns-util",
  "eyre",
+ "hickory-server",
  "itertools 0.13.0",
  "tokio",
 ]

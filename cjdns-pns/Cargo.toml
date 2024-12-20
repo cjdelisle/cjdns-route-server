@@ -8,7 +8,9 @@ eyre = { workspace = true }
 alloy = { workspace = true }
 tokio = { workspace = true }
 itertools = { workspace = true }
+hickory-server = { workspace = true }
 
 cjdns-pkt-abi = { workspace = true }
 cjdns-util = { workspace = true }
 cjdns-eth-rpc = { workspace = true }
+cjdns-bytes = { workspace = true }

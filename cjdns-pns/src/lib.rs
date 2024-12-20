@@ -14,6 +14,8 @@ use cjdns_pkt_abi::{Pns as PnsContract,IPNS, PNS_ADDR};
 use cjdns_util::now_sec;
 use cjdns_eth_rpc::{types::{AlloyTransport, GenericProvider}, EthRpc};
 
+pub mod record;
+
 // Aligned with the PNS contract
 const PREREG_LIFETIME_SECONDS: u64 = 60*60*24;
 

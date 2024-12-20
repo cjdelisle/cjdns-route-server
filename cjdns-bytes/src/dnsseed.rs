@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::message::{Message, RWrite};
 use crate::var_int::{read_var_int, write_var_int};
 use crate::readext::ReadExt;
+use crate::tlv::parse_tlv;
 
 pub struct AuthorizedPassword {
     pub password: String,
@@ -222,25 +223,6 @@ impl CjdnsTxtRecord {
             STANDARD_NO_PAD.decode(s).context("Could not decode base64")?;
         Self::decode_bin(&bytes)
     }
-}
-
-fn parse_tlv(bytes: &[u8]) -> Result<Vec<(u8, &[u8])>> {
-    let mut cursor = 0;
-    let mut out = Vec::new();
-    // println!("Begin parse TLV");
-    while cursor + 1 < bytes.len() {
-        let t = bytes[cursor];
-        let l = bytes[cursor + 1] as usize;
-        // println!("TLV({t},{l}) cursor={cursor} len() = {}", bytes.len());
-        if l < 2 {
-            bail!("Invalid item length: {l}");
-        } else if l + cursor > bytes.len() {
-            bail!("TLV is truncated");
-        }
-        out.push((t, &bytes[cursor + 2 .. cursor + l]));
-        cursor += l;
-    }
-    Ok(out)
 }
 
 #[cfg(test)]
