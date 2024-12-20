@@ -11,8 +11,13 @@ cjdns-bytes = { workspace = true }
 cjdns-crypto = { workspace = true }
 cjdns-core = { workspace = true }
 cjdns-ctrl = { workspace = true }
+cjdns-eth-rpc = { workspace = true }
 cjdns-hdr = { workspace = true }
 cjdns-keys = { workspace = true }
+cjdns-pkt-abi = { workspace = true }
+cjdns-pns = { workspace = true }
 cjdns-sniff = { workspace = true }
-netchecksum = { workspace = true }
 cjdns-snode-wire = { workspace = true }
+cjdns-util = { workspace = true }
+cjdns-util-http = { workspace = true }
+netchecksum = { workspace = true }

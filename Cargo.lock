@@ -1081,10 +1081,15 @@ dependencies = [
  "cjdns-core",
  "cjdns-crypto",
  "cjdns-ctrl",
+ "cjdns-eth-rpc",
  "cjdns-hdr",
  "cjdns-keys",
+ "cjdns-pkt-abi",
+ "cjdns-pns",
  "cjdns-sniff",
  "cjdns-snode-wire",
+ "cjdns-util",
+ "cjdns-util-http",
  "netchecksum",
 ]
 
