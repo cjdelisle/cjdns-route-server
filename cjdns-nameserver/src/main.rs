@@ -281,8 +281,8 @@ impl RequestHandler for ReqHandler {
                 return if let Ok(res) = respond_with_records(
                     request,
                     response_handle,
-                    Vec::new(),
                     recs.iter().collect(),
+                    Vec::new(),
                     Vec::new(),
                     glue.iter().collect(),
                 ).await {
