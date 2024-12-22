@@ -251,7 +251,7 @@ impl Pns {
                 if let Some(recs) = dom.records.get(sub) {
                     println!("  - {} possible records found", recs.len());
                     for rec in recs {
-                        if rec.record_type() == t || t.is_any() {
+                        if rec.record_type() == t || t.is_any() || rec.record_type() == RecordType::CNAME {
                             let mut recc = rec.clone();
                             println!("  - Found record: {recc:?}");
                             recc.set_name(name.clone());
