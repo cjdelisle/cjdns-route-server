@@ -26,6 +26,7 @@ pub const RECORD_TYPES: &'static [&'static str] = &[
     "NS",
     // "SRV",
     "TXT",
+    "MX",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -150,6 +151,12 @@ mod tests {
             rtype: "TXT".to_string(),
             name: "@".to_string(),
             value: "This is a text rec".to_string(),
+            ttl_sec: 400,
+        });
+        roundtrip_test(&JsonRecord {
+            rtype: "MX".to_string(),
+            name: "mail".to_string(),
+            value: "10 mail.example.com".to_string(),
             ttl_sec: 400,
         });
     }

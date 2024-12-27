@@ -234,6 +234,12 @@ impl Pns {
         }).await
     }
 
+    pub async fn domain_records(self: &Arc<Self>, id: u64) -> Result<Option<HashMap<String, Vec<Record>>>> {
+        self.with_domains(|doms|{
+            Ok(doms.get(&id).map(|d|d.records.clone()))
+        }).await
+    }
+
     // Error = internal error
     // None = NxDomain
     // Some(empty) = No records
