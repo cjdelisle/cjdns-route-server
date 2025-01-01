@@ -116,7 +116,7 @@ impl EthRpc {
             O: 'static + Send + Sync,
             FM: 'static + Send  + Sync + Fn(Address, AlloyProviderWs) -> O,
             FE: 'static + Clone + Send + Sync + Fn(C, X, Log) -> R,
-            R: 'static + Send + Future,
+            R: 'static + Send + Future<Output=()>,
     {
         let subs = Arc::new(Subscribe{
             nf: Arc::clone(self),
@@ -262,7 +262,7 @@ struct Subscribe<X,C,O,FM,FE,R>
         O: 'static + Send,
         FM: 'static + Send + Fn(Address, AlloyProviderWs) -> O,
         FE: 'static + Clone + Send + Fn(C, X, Log) -> R,
-        R: 'static + Send + Future,
+        R: 'static + Send + Future<Output=()>,
 {
     nf: Arc<EthRpc>,
     ctx: C,
@@ -278,7 +278,7 @@ impl<X,C,O,FM,FE,R> Subscribe<X,C,O,FM,FE,R>
         O: 'static + Send,
         FM: 'static + Send + Fn(Address, AlloyProviderWs) -> O,
         FE: 'static + Clone + Send + Fn(C, X, Log) -> R,
-        R: 'static + Send + Future,
+        R: 'static + Send + Future<Output=()>,
 {
     async fn handle_events(&self, sub: EventSubscription<X>, url: &Arc<String>) {
         let mut s = sub.into_stream();

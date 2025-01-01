@@ -120,8 +120,15 @@ fn pns_contract<P: GenericProvider>(prov: P) -> PnsContract::PnsInstance<AlloyTr
     PnsContract::new(PNS_ADDR.parse().unwrap(), prov)
 }
 
+pub struct Prereg {
+    pub lockup_id: u64,
+    pub namehash: B256,
+    pub timestamp: u64,
+}
+
 struct PnsMut {
     domains: Domains,
+    preregs: HashMap<u64, Arc<Prereg>>,
 }
 
 pub struct Pns {
@@ -135,6 +142,7 @@ impl Pns {
         let out = Arc::new(Self {
             m: Mutex::new(PnsMut{
                 domains: Domains::Errored,
+                preregs: HashMap::new(),
             }),
             rpc,
         });
@@ -200,6 +208,10 @@ impl Pns {
             let records = Bytes::copy_from_slice(records);
             Ok(pns_contract(prov).computePreregHash(lockup_id, name, records).call().await?._0)
         }).await
+    }
+
+    pub async fn known_preregs(self: &Arc<Self>) -> Result<Vec<Arc<Prereg>>> {
+        Ok(self.m.lock().await.preregs.values().cloned().collect())
     }
 
     pub async fn prereg_exists(self: &Arc<Self>, prereg_hash: B256) -> Result<bool> {
@@ -357,6 +369,36 @@ pub fn is_valid_domain_label(label: &str) -> bool {
     true
 }
 
+fn expire_old_preregs(m: &mut PnsMut) {
+    let now = now_sec();
+    let mut to_remove = Vec::new();
+    for (id, p) in m.preregs.iter() {
+        if p.timestamp + PREREG_LIFETIME_SECONDS < now {
+            to_remove.push(*id);
+        }
+    }
+    for id in to_remove {
+        println!("Expiring preregistration for lockup id {}", id);
+        m.preregs.remove(&id);
+    }
+}
+
+async fn add_prereg(inf: &Arc<Pns>, lockup_id: u64, namehash: B256) {
+    let mut m = inf.m.lock().await;
+    expire_old_preregs(&mut m);
+    m.preregs.insert(lockup_id, Arc::new(Prereg{
+        lockup_id,
+        namehash,
+        timestamp: now_sec(),
+    }));
+}
+
+async fn rm_prereg(inf: &Arc<Pns>, lockup_id: u64) {
+    let mut m = inf.m.lock().await;
+    expire_old_preregs(&mut m);
+    m.preregs.remove(&lockup_id);
+}
+
 // event Register(address sender, uint64 id, uint64 lockupId, bytes name, bytes records);
 async fn filter_register_domain(srv: &Arc<Pns>) -> Result<()> {
     srv.rpc.subscribe(
@@ -386,6 +428,7 @@ async fn filter_register_domain(srv: &Arc<Pns>) -> Result<()> {
                     Ok(())
                 })
             ).await;
+            rm_prereg(&srv, reg.lockupId).await;
         }
     ).await
 }
@@ -569,14 +612,14 @@ async fn filter_preregister(srv: &Arc<Pns>) -> Result<()> {
         PNS_ADDR.parse()?,
         PnsContract::new,
         |pns| pns.Preregister_filter(),
-        |_, prereg, log| async move {
+        |srv, prereg, log| async move {
             println!("TX {:?} Preregister - NameHash: {:?}, BY: {}, LockupId: {}",
                 log.transaction_hash,
                 prereg.nameHash,
                 prereg.sender,
                 prereg.lockupId,
             );
-            Ok::<(),eyre::ErrReport>(())
+            add_prereg(&srv, prereg.lockupId, prereg.nameHash).await;
         }
     ).await
 }
@@ -587,14 +630,14 @@ async fn filter_destroy_prereg(srv: &Arc<Pns>) -> Result<()> {
         PNS_ADDR.parse()?,
         PnsContract::new,
         |pns| pns.DestroyPrereg_filter(),
-        |_, destroy_prereg, log| async move {
+        |srv, destroy_prereg, log| async move {
             println!("TX {:?} DestroyPrereg - NameHash: {:?}, BY: {}, LockupId: {}",
                 log.transaction_hash,
                 destroy_prereg.nameHash,
                 destroy_prereg.sender,
                 destroy_prereg.lockupId,
             );
-            Ok::<(),eyre::ErrReport>(())
+            rm_prereg(&srv, destroy_prereg.lockupId).await;
         }
     ).await
 }
