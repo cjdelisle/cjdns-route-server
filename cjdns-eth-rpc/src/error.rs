@@ -3,11 +3,12 @@ use std::sync::Arc;
 use alloy::transports::{RpcError, TransportErrorKind};
 use eyre::{bail, Result};
 
-use crate::{rpcinstance::RpcInfo, types::RPC_MAX_TRIES};
+use crate::rpcinstance::RpcInfo;
 
 pub fn handle_transport_error(
     t: &RpcError<TransportErrorKind>,
     i: i32,
+    rpc_max_tries: i32,
 ) -> Result<String> {
     let out = match t {
         RpcError::UnsupportedFeature(x) => {
@@ -51,10 +52,10 @@ pub fn handle_transport_error(
             }
         }
     };
-    if i > RPC_MAX_TRIES {
-        bail!("Failed after {RPC_MAX_TRIES} tries");
+    if i > rpc_max_tries {
+        bail!("Failed after {rpc_max_tries} tries");
     } else {
-        println!("try_do_eth() rpc error {i}/{RPC_MAX_TRIES}, retry...");
+        println!("try_do_eth() rpc error {i}/{rpc_max_tries}, retry...");
     }
     Ok(out)
 }
@@ -63,13 +64,14 @@ pub async fn handle_generic_error(
     e: eyre::Error,
     i: i32,
     rpc_info: &Arc<RpcInfo>,
+    rpc_max_tries: i32,
 ) -> Result<()> {
     let cause = if let Some(re) =
         e.chain()
         .filter_map(|er|er.downcast_ref::<RpcError<TransportErrorKind>>())
         .next()
     {
-        handle_transport_error(re, i)?
+        handle_transport_error(re, i, rpc_max_tries)?
     } else {
         return Err(e);
     };

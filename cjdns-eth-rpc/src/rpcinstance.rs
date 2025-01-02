@@ -1,11 +1,6 @@
-use std::{
-    any::Any,
-    collections::HashMap,
-    sync::{atomic::AtomicBool, Arc},
-};
+use std::sync::{atomic::AtomicBool, Arc};
 
-use alloy::primitives::Address;
-use eyre::{bail, Result};
+use eyre::Result;
 
 use crate::types::GenericProvider;
 

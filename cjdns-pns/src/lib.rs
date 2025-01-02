@@ -117,7 +117,7 @@ enum Domains {
 }
 
 fn pns_contract<P: GenericProvider>(prov: P) -> PnsContract::PnsInstance<AlloyTransport, P> {
-    PnsContract::new(PNS_ADDR.parse().unwrap(), prov)
+    PnsContract::new(PNS_ADDR, prov)
 }
 
 pub struct Prereg {
@@ -403,7 +403,7 @@ async fn rm_prereg(inf: &Arc<Pns>, lockup_id: u64) {
 async fn filter_register_domain(srv: &Arc<Pns>) -> Result<()> {
     srv.rpc.subscribe(
         Arc::clone(srv),
-        PNS_ADDR.parse()?,
+        PNS_ADDR,
         PnsContract::new,
         |pns| pns.Register_filter(),
         |srv, reg, log| async move {
@@ -438,7 +438,7 @@ async fn filter_register_domain(srv: &Arc<Pns>) -> Result<()> {
 async fn filter_update_records(srv: &Arc<Pns>) -> Result<()> {
     srv.rpc.subscribe(
         Arc::clone(srv),
-        PNS_ADDR.parse()?,
+        PNS_ADDR,
         PnsContract::new,
         |pns| pns.UpdateRecords_filter(),
         |srv, ur, log| async move {
@@ -468,7 +468,7 @@ async fn filter_update_records(srv: &Arc<Pns>) -> Result<()> {
 async fn filter_takeover(srv: &Arc<Pns>) -> Result<()> {
     srv.rpc.subscribe(
         Arc::clone(srv),
-        PNS_ADDR.parse()?,
+        PNS_ADDR,
         PnsContract::new,
         |pns| pns.Takeover_filter(),
         |srv, takeover, log| async move {
@@ -501,7 +501,7 @@ async fn filter_takeover(srv: &Arc<Pns>) -> Result<()> {
 async fn filter_create_subdomain(srv: &Arc<Pns>) -> Result<()> {
     srv.rpc.subscribe(
         Arc::clone(srv),
-        PNS_ADDR.parse()?,
+        PNS_ADDR,
         PnsContract::new,
         |pns| pns.CreateSubdomain_filter(),
         |srv, cs, log| async move {
@@ -541,7 +541,7 @@ async fn filter_create_subdomain(srv: &Arc<Pns>) -> Result<()> {
 async fn filter_destroy(srv: &Arc<Pns>) -> Result<()> {
     srv.rpc.subscribe(
         Arc::clone(srv),
-        PNS_ADDR.parse()?,
+        PNS_ADDR,
         PnsContract::new,
         |pns| pns.Destroy_filter(),
         |srv, destroy, log| async move {
@@ -578,7 +578,7 @@ async fn filter_destroy(srv: &Arc<Pns>) -> Result<()> {
 async fn filter_blacklist(srv: &Arc<Pns>) -> Result<()> {
     srv.rpc.subscribe(
         Arc::clone(srv),
-        PNS_ADDR.parse()?,
+        PNS_ADDR,
         PnsContract::new,
         |pns| pns.Blacklist_filter(),
         |srv, blacklist, log| async move {
@@ -609,7 +609,7 @@ async fn filter_blacklist(srv: &Arc<Pns>) -> Result<()> {
 async fn filter_preregister(srv: &Arc<Pns>) -> Result<()> {
     srv.rpc.subscribe(
         Arc::clone(srv),
-        PNS_ADDR.parse()?,
+        PNS_ADDR,
         PnsContract::new,
         |pns| pns.Preregister_filter(),
         |srv, prereg, log| async move {
@@ -627,7 +627,7 @@ async fn filter_preregister(srv: &Arc<Pns>) -> Result<()> {
 async fn filter_destroy_prereg(srv: &Arc<Pns>) -> Result<()> {
     srv.rpc.subscribe(
         Arc::clone(srv),
-        PNS_ADDR.parse()?,
+        PNS_ADDR,
         PnsContract::new,
         |pns| pns.DestroyPrereg_filter(),
         |srv, destroy_prereg, log| async move {
