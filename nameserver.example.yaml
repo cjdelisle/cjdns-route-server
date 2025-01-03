@@ -17,6 +17,14 @@ nameservers:
 special_ns_prefix:
   pkt.management: ns69
 
+# If specified, this will pull cjdns seeds and act as a DNS seeder.
+# snode_key is also optional, if specified then this seeder will notify nodes about the snode.
+# seeder:
+#   snode_host: '[fc7f:fdb2:e104:39d7:ed74:446a:3c9f:6b4e]'
+#   snode_port: 3334
+#   snode_pass: 'the_password_goes_here'
+#   snode_key: 'znrj10d4s005qyg2wg2sx54k4yrqjxyvkc1pz4vqfzxdv5sxvds0.k'
+
 # ETH RPC
 rpc:
   # The chance that we will re-use an RPC server which has been marked as dead (0-1)

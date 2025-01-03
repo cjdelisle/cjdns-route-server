@@ -12,7 +12,7 @@ use config::NameserverConfig;
 use hickory_client::{
     client::{Client, SyncClient},
     rr::{
-        rdata::{AAAA, NS, SOA},
+        rdata::{AAAA, NS, SOA, TXT},
         Name,
         RecordData,
     },
@@ -30,6 +30,7 @@ use hickory_server::{
     ServerFuture
 };
 use rand::Rng;
+use seeder::Seeder;
 use tokio::{net::UdpSocket, sync::RwLock};
 
 use cjdns_eth_rpc::EthRpc;
@@ -38,6 +39,7 @@ use cjdns_keys::CJDNSPublicKey;
 use cjdns_pns::{record, Pns};
 
 mod config;
+mod seeder;
 
 async fn listen_dns() -> Result<()> {
     let config = tokio::fs::read_to_string("./nameserver.yaml").await
@@ -67,6 +69,11 @@ async fn listen_dns() -> Result<()> {
 
 impl ReqHandler {
     fn new(config: NameserverConfig, pns: Arc<Pns>) -> Result<ReqHandler> {
+        let seeder = if let Some(seeder_cfg) = &config.seeder {
+            Some(seeder::Seeder::new(seeder_cfg)?)
+        } else {
+            None
+        };
         let name = rr::Name::parse(&config.my_name, None)
             .with_context(||format!("nameserver.yaml error: Unable to parse {} as a domain", config.my_name))?;
         let my_ipv4 = Record::from_rdata(
@@ -102,6 +109,7 @@ impl ReqHandler {
             my_ipv6,
             pns,
             config,
+            seeder,
         })
     }
 }
@@ -117,6 +125,7 @@ struct ReqHandler {
     my_ipv6: Option<Record>,
     pns: Arc<Pns>,
     config: NameserverConfig,
+    seeder: Option<Arc<Seeder>>,
 }
 
 async fn respond_with_records<R: ResponseHandler>(
@@ -202,6 +211,29 @@ impl RequestHandler for ReqHandler {
                     Vec::new(),
                     Vec::new(),
                 ).await;
+            } else if name.starts_with("seed.") && query.query_type() == RecordType::TXT && self.seeder.is_some() {
+                if let Some(seeder) = &self.seeder {
+                    let seed = match seeder.get_seed_txt().await {
+                        Ok(seed) => seed,
+                        Err(e) => {
+                            println!("Error getting seed: {e}");
+                            return respond(request, response_handle, ResponseCode::ServFail).await;
+                        }
+                    };
+                    let record = Record::from_rdata(
+                        query.name().into(),
+                        300,
+                        TXT::new(vec![seed]).into_rdata(),
+                    );
+                    return respond_with_records(
+                        request,
+                        response_handle,
+                        vec![&record],
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                    ).await;
+                }
             } else {
                 return respond(request, response_handle, ResponseCode::NoError).await
             }
