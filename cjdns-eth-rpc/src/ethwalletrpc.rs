@@ -12,13 +12,15 @@ pub struct EthWalletRpc {
     rpc: Arc<EthRpc>,
     wallet: EthereumWallet,
     rpc_max_tries: i32,
+    rpc_timeout_seconds: u8,
 }
 impl EthWalletRpc {
-    pub fn new(rpc: Arc<EthRpc>, wallet: EthereumWallet, rpc_max_tries: u8) -> Self {
+    pub fn new(rpc: Arc<EthRpc>, wallet: EthereumWallet, rpc_max_tries: u8, rpc_timeout_seconds: u8) -> Self {
         Self {
             rpc,
             wallet,
             rpc_max_tries: rpc_max_tries as i32,
+            rpc_timeout_seconds,
         }
     }
     pub async fn do_eth<Y,FY,F>(
@@ -46,11 +48,12 @@ impl EthWalletRpc {
                         }
                     }
                 }
-                _ = tokio::time::sleep(Duration::from_secs(10)) => {
+                _ = tokio::time::sleep(Duration::from_secs(self.rpc_timeout_seconds as _)) => {
                     if i > self.rpc_max_tries {
-                        bail!("Failed after {} tries to create transaction", self.rpc_max_tries);
+                        bail!("do_eth() Failed after {} tries to create transaction", self.rpc_max_tries);
                     } else {
-                        println!("do_eth() timed out attempt {i}/{}, retry...", self.rpc_max_tries);
+                        println!("do_eth() timed out attempt ({} sec) {}/{}, retry...",
+                            self.rpc_timeout_seconds, i, self.rpc_max_tries);
                     }
                 }
             }
