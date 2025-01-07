@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use alloy::transports::{RpcError, TransportErrorKind};
+use alloy::transports::{RpcError, TransportError, TransportErrorKind};
 use eyre::{bail, Result};
 
 use crate::rpcinstance::RpcInfo;
 
 pub fn handle_transport_error(
-    t: &RpcError<TransportErrorKind>,
+    t: &TransportError,
     i: i32,
     rpc_max_tries: i32,
 ) -> Result<String> {
@@ -66,15 +66,28 @@ pub async fn handle_generic_error(
     rpc_info: &Arc<RpcInfo>,
     rpc_max_tries: i32,
 ) -> Result<()> {
-    let cause = if let Some(re) =
+    let cause = if let Some(e) =
         e.chain()
-        .filter_map(|er|er.downcast_ref::<RpcError<TransportErrorKind>>())
+        .filter_map(|er|er.downcast_ref::<alloy::contract::Error>())
         .next()
     {
-        handle_transport_error(re, i, rpc_max_tries)
+        match e {
+            alloy::contract::Error::TransportError(e) => {
+                Some(handle_transport_error(e, i, rpc_max_tries))
+            }
+            _ => {
+                None
+            }
+        }
+    } else {
+        None
+    };
+    if let Some(cause) = cause {
+        // Throw if handle_transport_error thinks it's our fault
+        let cause = cause?;
+        rpc_info.set_dead(&cause).await;
     } else {
         return Err(e);
-    };
-    rpc_info.set_dead(&format!("{:?}", cause)).await;
+    }
     Ok(())
 }

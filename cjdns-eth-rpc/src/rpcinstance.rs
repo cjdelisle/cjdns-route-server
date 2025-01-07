@@ -30,6 +30,8 @@ impl RpcInfo {
         if !current {
             println!("MARKING {} AS DEAD BECAUSE {}", self.http, reason);
             self.is_dead.store(true, std::sync::atomic::Ordering::Relaxed);
+        } else {
+            println!("Transport {} is dead, error discarded", self.http);
         }
     }
 }
