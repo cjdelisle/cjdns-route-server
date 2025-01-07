@@ -2145,9 +2145,9 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hickory-client"
-version = "0.24.1"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bab9683b08d8f8957a857b0236455d80e1886eaa8c6178af556aa7871fb61b55"
+checksum = "949d2fef0bbdd31a0f6affc6bf390b4a0017492903eff6f7516cb382d9e85536"
 dependencies = [
  "cfg-if",
  "data-encoding",

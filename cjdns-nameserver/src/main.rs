@@ -220,10 +220,15 @@ impl RequestHandler for ReqHandler {
                             return respond(request, response_handle, ResponseCode::ServFail).await;
                         }
                     };
+                    let sv = if seed.len() <= 255 {
+                        vec![seed]
+                    } else {
+                        vec![seed[0..255].to_string(), seed[255..].to_string()]
+                    };
                     let record = Record::from_rdata(
                         query.name().into(),
                         300,
-                        TXT::new(vec![seed]).into_rdata(),
+                        TXT::new(sv).into_rdata(),
                     );
                     return respond_with_records(
                         request,

@@ -130,3 +130,27 @@ pub fn parse_list_peer(p: &SeederListPeer) -> Result<CjdnsPeer> {
         version,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use hickory_client::{rr::{rdata::TXT, Record, RecordData}, serialize::binary::BinEncodable};
+
+    #[test]
+    fn test_concat() {
+        // Make sure it works to concatnate strings to make a TXT record and TXT::to_string() will output
+        // the two strings concatnated.
+        let three_hundred_char_string = "a".repeat(300);
+        let record = Record::from_rdata(
+            "test".parse().unwrap(),
+            300,
+            TXT::new(vec![
+                three_hundred_char_string[0..255].into(),
+                three_hundred_char_string[255..].into(),
+            ]).into_rdata(),
+        );
+        // Check we CAN encode this record
+        record.to_bytes().unwrap();
+        let txt = record.data().unwrap().as_txt().unwrap();
+        assert_eq!(txt.to_string(), three_hundred_char_string);
+    }
+}
