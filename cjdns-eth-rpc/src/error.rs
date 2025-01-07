@@ -71,10 +71,10 @@ pub async fn handle_generic_error(
         .filter_map(|er|er.downcast_ref::<RpcError<TransportErrorKind>>())
         .next()
     {
-        handle_transport_error(re, i, rpc_max_tries)?
+        handle_transport_error(re, i, rpc_max_tries)
     } else {
         return Err(e);
     };
-    rpc_info.set_dead(&cause).await;
+    rpc_info.set_dead(&format!("{:?}", cause)).await;
     Ok(())
 }
