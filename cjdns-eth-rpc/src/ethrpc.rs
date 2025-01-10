@@ -320,6 +320,7 @@ impl<X,C,O,FM,FE,R> Subscribe<X,C,O,FM,FE,R>
                 Err(e) => {
                     println!("Warn: Unable to subscribe event for {}: {}", url, e);
                     tokio::time::sleep(Duration::from_secs(3)).await;
+                    min_num = mn + 1;
                     continue;
                 }
             };
