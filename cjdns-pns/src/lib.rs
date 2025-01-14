@@ -7,7 +7,7 @@ use std::{
 use alloy::primitives::{Address, Bytes, B256, U256};
 
 use eyre::{bail, eyre, Result};
-use hickory_server::proto::rr::{Name, Record, RecordType};
+use hickory_server::proto::rr::{rdata::{ANAME, CNAME, MX, NS, PTR, SRV, SVCB}, Name, RData, Record, RecordType};
 use record::decode_records;
 use tokio::sync::{broadcast::channel, Mutex};
 use itertools::Itertools;
@@ -50,6 +50,7 @@ pub struct Domain {
     /// Records stored by domain, in the case of e.g. cjd.pkt, the records are stored under "cjd"
     /// The Name in the record value is not correct.
     pub records: HashMap<String,Vec<Record>>,
+    pub name: String,
 }
 impl Domain {
     pub fn new(id: u64, d: IPNS::Domain) -> Self {
@@ -57,25 +58,28 @@ impl Domain {
             id,
             d,
             records: HashMap::new(),
+            name: String::new(),
         };
         out.update_records();
         out
     }
     pub fn update_records(&mut self) {
+        self.name = String::from_utf8_lossy(&self.d.name.to_vec()).to_string();
         self.records = match decode_records(&self.d.records) {
             Ok(recs) => {
                 // We need to take the NAME of the domain and append it to the records so
                 // we can just scan and match.
-                match Name::from_utf8(&self.name()) {
+                match Name::from_utf8(self.name()) {
                     Ok(name) => {
                         let mut out_recs: HashMap<String, Vec<Record>> = HashMap::new();
-                        for r in recs.into_iter() {
+                        for mut r in recs.into_iter() {
                             match r.name().clone().append_name(&name) {
                                 Err(e) => {
                                     println!("Error appending name to record for domain {}: {e}", self.name());
                                 }
                                 Ok(n) => {
                                     let ns = n.to_string();
+                                    r.set_name(n);
                                     println!("Has record: {ns} of type {}", r.record_type());
                                     out_recs.entry(ns).or_default().push(r);
                                 }
@@ -95,8 +99,8 @@ impl Domain {
             }
         };
     }
-    pub fn name(&self) -> String {
-        String::from_utf8_lossy(&self.d.name.to_vec()).to_string()
+    pub fn name(&self) -> &String {
+        &self.name
     }
     pub fn is_subdomain(&self) -> bool {
         self.d.subdomains == 0xff
@@ -118,6 +122,94 @@ enum Domains {
 
 fn pns_contract<P: GenericProvider>(prov: P) -> PnsContract::PnsInstance<AlloyTransport, P> {
     PnsContract::new(PNS_ADDR, prov)
+}
+
+fn fix_pkt_names1(n: &Name, pkt: &Name, tld: &Name) -> Result<Option<Name>> {
+    // If n ends with pkt, then we append tld to it
+    if n.iter().rev().next() == pkt.iter().next() {
+        Ok(Some(n.clone().append_domain(&tld)?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn fix_pkt_names0(r: &mut Vec<Record>, pkt: &Name, tld: &Option<Name>) -> Result<()> {
+    for rec in r.iter_mut() {
+        let name = rec.name().clone().append_domain(&pkt)?;
+        let Some(tld) = tld else {
+            // no TLD = just fix the name and be done.
+            rec.set_name(name);
+            return Ok(())
+        };
+        rec.set_name(name.append_domain(&tld)?);
+        match rec.data() {
+            Some(RData::ANAME(ANAME(n))) => {
+                if let Some(n) = fix_pkt_names1(n, pkt, tld)? {
+                    rec.set_data(Some(RData::ANAME(ANAME(n))));
+                }
+            }
+            Some(RData::CNAME(CNAME(n))) => {
+                if let Some(n) = fix_pkt_names1(n, pkt, tld)? {
+                    rec.set_data(Some(RData::CNAME(CNAME(n))));
+                }
+            }
+            Some(RData::NS(NS(n))) => {
+                if let Some(n) = fix_pkt_names1(n, pkt, tld)? {
+                    rec.set_data(Some(RData::NS(NS(n))));
+                }
+            }
+            Some(RData::MX(mx)) => {
+                if let Some(n) = fix_pkt_names1(mx.exchange(), pkt, tld)? {
+                    rec.set_data(Some(RData::MX(MX::new(mx.preference(),n))));
+                }
+            }
+            Some(RData::PTR(PTR(n))) => {
+                if let Some(n) = fix_pkt_names1(n, pkt, tld)? {
+                    rec.set_data(Some(RData::PTR(PTR(n))));
+                }
+            }
+            Some(RData::SRV(srv)) => {
+                if let Some(target) = fix_pkt_names1(srv.target(), pkt, tld)? {
+                    rec.set_data(Some(RData::SRV(SRV::new(
+                        srv.priority(),
+                        srv.weight(),
+                        srv.port(),
+                        target,
+                    ))));
+                }
+            }
+            Some(RData::SVCB(svcb)) => {
+                if let Some(target) = fix_pkt_names1(svcb.target_name(), pkt, tld)? {
+                    rec.set_data(Some(RData::SVCB(SVCB::new(
+                        svcb.svc_priority(),
+                        target,
+                        svcb.svc_params().to_vec(),
+                    ))));
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+pub struct Records {
+    pub records: Vec<Record>,
+    pub nameservers: Vec<Record>,
+}
+impl Records {
+    pub fn fix_pkt_names(&mut self, tld: Option<&str>) -> Result<()> {
+        let pkt = Name::from_utf8("pkt")?;
+        let tld = if let Some(tld) = tld {
+            Some(Name::from_utf8(tld)?)
+        } else {
+            None
+        };
+        fix_pkt_names0(&mut self.records, &pkt, &tld)?;
+        fix_pkt_names0(&mut self.nameservers, &pkt, &tld)?;
+        Ok(())
+    }
 }
 
 pub struct Prereg {
@@ -255,29 +347,68 @@ impl Pns {
     // Error = internal error
     // None = NxDomain
     // Some(empty) = No records
-    pub async fn get_records(self: &Arc<Self>, name: &Name, t: RecordType) -> Result<Option<Vec<Record>>> {
+    pub async fn get_records(self: &Arc<Self>, name: &Name, t: RecordType) -> Result<Option<Records>> {
         // TODO: If name is reserved or empty, resolve based on the name registered to the TLD
         let sname = name.to_string();
-        let Ok((sub, _tld)) = parse_name(&sname) else {
+        let Ok((sub, tld)) = parse_name(&sname) else {
             return Ok(None);
         };
         println!("Searching records for name: {sub}");
         self.with_domains(|doms|{
-            let mut out = Vec::new();
+            let mut out = Records::default();
             for dom in doms.values() {
+                // If the sub does not end with the domain name, we skip entirely
+                // We also check that the character before the name is a dot, or the start of the string
+                if let Some(ssub) = sub.strip_suffix(&dom.name) {
+                    if !ssub.is_empty() && !ssub.ends_with('.') {
+                        println!("{sub} not a subdomain of {}", dom.name);
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+
                 // println!(" - Checking domain {}", dom.name());
                 if let Some(recs) = dom.records.get(sub) {
-                    println!("  - {} possible records found", recs.len());
+                    println!("  - {} possible records found in {}", recs.len(), dom.name);
                     for rec in recs {
                         if rec.record_type() == t || t.is_any() || rec.record_type() == RecordType::CNAME {
-                            let mut recc = rec.clone();
-                            println!("  - Found record: {recc:?}");
-                            recc.set_name(name.clone());
-                            out.push(recc);
+                            println!("  - Found record: {rec:?}");
+                            out.records.push(rec.clone());
                         }
                     }
-                    return Ok(Some(out));
                 }
+
+                // If sub contains one or more dots, we need to check if there is an NS record.
+                // for example foo.bar.baz and baz has an NS record, we need to return that.
+                // or if bar.baz has an NS record, we need to return that.
+                //
+                // To do this, we need to drill down on subsequent subdomain length, so first
+                // we try getting bar.baz, then we try baz, and so on.
+                let mut ssub = sub;
+                loop {
+                    println!("Trying NS records for: {ssub} in {}", dom.name);
+                    if let Some(recs) = dom.records.get(ssub) {
+                        println!("  - {} possible NS records found in {}", recs.len(), dom.name);
+                        for rec in recs {
+                            if rec.record_type() == RecordType::NS {
+                                println!("  - Found NS record: {rec:?}");
+                                out.nameservers.push(rec.clone());
+                            }
+                        }
+                    }
+                    if let Some(index) = ssub.find('.') {
+                        ssub = &ssub[index+1..];
+                    } else {
+                        break;
+                    }
+                }
+
+                if out.records.is_empty() && out.nameservers.is_empty() {
+                    // Fall through
+                }
+                out.fix_pkt_names(tld)?;
+                return Ok(Some(out));
             }
             Ok(None)
         }).await

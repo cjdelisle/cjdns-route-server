@@ -319,12 +319,12 @@ impl RequestHandler for ReqHandler {
                 respond(request, response_handle, ResponseCode::NXDomain).await
             }
             Ok(Some(recs)) => {
-                println!("Reply records {}", recs.len());
+                println!("Reply records {} nameservers {}", recs.records.len(), recs.nameservers.len());
                 respond_with_records(
                     request,
                     response_handle,
-                    recs.iter().collect(),
-                    Vec::new(),
+                    recs.records.iter().collect(),
+                    if recs.records.is_empty() { recs.nameservers.iter().collect() } else { Vec::new() },
                     Vec::new(),
                     Vec::new(),
                 ).await
