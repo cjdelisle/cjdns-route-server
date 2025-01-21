@@ -70,7 +70,13 @@ fn parse_record_str(rtype: &str, name: &str, value: &str, ttl_sec: u32) -> Resul
         "TXT" => TXT::from_bytes(vec![value.as_bytes()]).into_rdata(),
         other_type => {
             let rt = RecordType::from_str(other_type)?;
-            RData::try_from_str(rt, value)?
+            // If the rtype is MX and they put just the mailserver without the number before
+            // it, we should add the default number of 10.
+            if rt == RecordType::MX && !value.contains(" ") {
+                RData::try_from_str(rt, &format!("10 {}", value))?
+            } else {
+                RData::try_from_str(rt, value)?
+            }
         }
     };
     Ok(Record::from_rdata(name, ttl_sec, out))
@@ -157,6 +163,12 @@ mod tests {
             rtype: "MX".to_string(),
             name: "mail".to_string(),
             value: "10 mail.example.com".to_string(),
+            ttl_sec: 400,
+        });
+        roundtrip_test(&JsonRecord {
+            rtype: "MX".to_string(),
+            name: "mail".to_string(),
+            value: "mail.example.com".to_string(),
             ttl_sec: 400,
         });
     }
