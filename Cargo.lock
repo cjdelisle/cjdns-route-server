@@ -1091,6 +1091,7 @@ dependencies = [
  "cjdns-util",
  "cjdns-util-http",
  "netchecksum",
+ "sodiumoxide",
 ]
 
 [[package]]
@@ -2575,7 +2576,7 @@ dependencies = [
 [[package]]
 name = "libsodium-sys"
 version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?rev=9f6a18d40a4db253edfebac9f2ce5c22d09b1f47#9f6a18d40a4db253edfebac9f2ce5c22d09b1f47"
+source = "git+https://github.com/cjdelisle/sodiumoxide?rev=2c1406ce59c3ebe702cb72b37c67d897e4e2ac34#2c1406ce59c3ebe702cb72b37c67d897e4e2ac34"
 dependencies = [
  "cc",
  "libc",
@@ -3796,7 +3797,7 @@ dependencies = [
 [[package]]
 name = "sodiumoxide"
 version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?rev=9f6a18d40a4db253edfebac9f2ce5c22d09b1f47#9f6a18d40a4db253edfebac9f2ce5c22d09b1f47"
+source = "git+https://github.com/cjdelisle/sodiumoxide?rev=2c1406ce59c3ebe702cb72b37c67d897e4e2ac34#2c1406ce59c3ebe702cb72b37c67d897e4e2ac34"
 dependencies = [
  "ed25519",
  "libc",

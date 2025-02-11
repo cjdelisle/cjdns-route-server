@@ -3,6 +3,10 @@ name = "cjdns"
 version = "0.1.0"
 edition = "2018"
 
+[features]
+eth = ["cjdns-eth-rpc", "cjdns-pkt-abi", "cjdns-pns"]
+http = ["cjdns-util-http"]
+
 [dependencies]
 cjdns-admin = { workspace = true }
 cjdns-ann = { workspace = true }
@@ -11,13 +15,14 @@ cjdns-bytes = { workspace = true }
 cjdns-crypto = { workspace = true }
 cjdns-core = { workspace = true }
 cjdns-ctrl = { workspace = true }
-cjdns-eth-rpc = { workspace = true }
+cjdns-eth-rpc = { workspace = true, optional = true }
 cjdns-hdr = { workspace = true }
 cjdns-keys = { workspace = true }
-cjdns-pkt-abi = { workspace = true }
-cjdns-pns = { workspace = true }
+cjdns-pkt-abi = { workspace = true, optional = true }
+cjdns-pns = { workspace = true, optional = true }
 cjdns-sniff = { workspace = true }
 cjdns-snode-wire = { workspace = true }
 cjdns-util = { workspace = true }
-cjdns-util-http = { workspace = true }
+cjdns-util-http = { workspace = true, optional = true }
 netchecksum = { workspace = true }
+sodiumoxide = { workspace = true }
