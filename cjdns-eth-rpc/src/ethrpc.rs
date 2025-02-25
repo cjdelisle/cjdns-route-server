@@ -156,9 +156,11 @@ impl EthRpc {
                 }
                 _ = tokio::time::sleep(Duration::from_secs(10)) => {
                     if i > self.rpc_max_tries {
-                        return Err(eyre!("Failed after {} tries to read transaction", self.rpc_max_tries));
+                        return Err(eyre!("read_eth({}) Failed after {} tries to read transaction",
+                            rpc_info.http, self.rpc_max_tries));
                     } else {
-                        println!("read_eth() timed out attempt {i}/{}, retry...", self.rpc_max_tries);
+                        println!("read_eth({}) timed out attempt {}/{}, retry...",
+                            rpc_info.http, i, self.rpc_max_tries);
                     }
                 }
             }

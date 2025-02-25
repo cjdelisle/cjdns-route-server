@@ -50,10 +50,11 @@ impl EthWalletRpc {
                 }
                 _ = tokio::time::sleep(Duration::from_secs(self.rpc_timeout_seconds as _)) => {
                     if i > self.rpc_max_tries {
-                        bail!("do_eth() Failed after {} tries to create transaction", self.rpc_max_tries);
+                        bail!("do_eth({}) Failed after {} tries to create transaction",
+                            rpc_info.http, self.rpc_max_tries);
                     } else {
-                        println!("do_eth() timed out attempt ({} sec) {}/{}, retry...",
-                            self.rpc_timeout_seconds, i, self.rpc_max_tries);
+                        println!("do_eth({}) timed out on attempt ({} sec) {}/{}, retry...",
+                            rpc_info.http, self.rpc_timeout_seconds, i, self.rpc_max_tries);
                     }
                 }
             }
