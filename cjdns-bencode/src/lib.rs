@@ -9,6 +9,7 @@ pub use bendy;
 pub use crate::value::{BValue, BencodeError};
 
 mod value;
+pub mod json;
 
 #[cfg(test)]
 mod tests {

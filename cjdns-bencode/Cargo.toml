@@ -12,3 +12,6 @@ description = "cjdns Bencode library"
 bendy = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
+eyre = { workspace = true }
+
+cjdns-bytes = { workspace = true }
