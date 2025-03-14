@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
 #[derive(Debug)]
-struct Overflow;
+pub struct Overflow;
 
 struct Chunk {
     bytes: Vec<u8>,
@@ -23,6 +23,15 @@ impl Chunk {
     #[inline]
     fn cap(&self) -> usize {
         self.offset
+    }
+    #[inline]
+    fn discard(&mut self, bytes: usize) -> Result<usize, Overflow> {
+        if bytes > self.len() {
+            Err(Overflow)
+        } else {
+            self.offset += bytes;
+            Ok(bytes)
+        }
     }
     #[inline]
     fn pop(&mut self, out: &mut [u8]) -> Result<usize, Overflow> {
@@ -84,6 +93,33 @@ impl Message {
         vec1
     }
 
+    /// Discard bytes from the message
+    /// If bytes exceeds message length, return an error, but will still discard all bytes
+    pub fn discard(&mut self, mut bytes: usize) -> Result<(), Overflow> {
+        while let Some(mut chk) = self.chunks.pop() {
+            let chunk_len = chk.len();
+            if bytes >= chunk_len {
+                bytes -= chunk_len;
+                chk.discard(chunk_len)?;
+                self.spare_chunks.push(chk);
+            } else {
+                chk.discard(bytes)?;
+                self.chunks.push(chk);
+                return Ok(());
+            }
+        }
+        if bytes > 0 {
+            Err(Overflow)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Clear the message (discard all bytes)
+    pub fn clear(&mut self) {
+        self.discard(self.len()).unwrap();
+    }
+
     // Read as an iovec
     pub fn iovec(&self) -> impl Iterator<Item=&[u8]> {
         self.chunks.iter().rev().map(|chk|&chk.bytes[chk.offset..])
@@ -126,7 +162,6 @@ impl Read for Message {
         }
         Ok(bytes)
     }
-
 }
 
 pub trait RWrite: Write {
