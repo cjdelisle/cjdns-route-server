@@ -914,16 +914,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
 
 [[package]]
-name = "bendy"
-version = "0.3.2"
-source = "git+https://github.com/CJDNS-Development-Team/bendy-cjdns?tag=v0.3.2-cjdns#21849683c9e9b83b8d217d044c1da78ee573926b"
-dependencies = [
- "failure",
- "serde",
- "serde_bytes",
-]
-
-[[package]]
 name = "bimap"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1099,9 +1089,11 @@ name = "cjdns-admin"
 version = "0.1.0"
 dependencies = [
  "cjdns-bencode",
+ "cjdns-bytes",
  "dirs",
  "eyre",
  "hex",
+ "log",
  "rand 0.7.3",
  "regex",
  "serde",
@@ -1129,11 +1121,8 @@ dependencies = [
 name = "cjdns-bencode"
 version = "0.1.0"
 dependencies = [
- "bendy",
  "cjdns-bytes",
  "eyre",
- "hex",
- "serde",
 ]
 
 [[package]]
@@ -1154,6 +1143,8 @@ dependencies = [
 name = "cjdns-core"
 version = "0.1.0"
 dependencies = [
+ "cjdns-keys",
+ "eyre",
  "lazy_static",
  "rand 0.7.3",
  "regex",
@@ -1274,6 +1265,7 @@ name = "cjdns-ptest"
 version = "0.1.0"
 dependencies = [
  "cjdns-admin",
+ "cjdns-bencode",
  "cjdns-bytes",
  "cjdns-keys",
  "cjdns-snode-wire",
@@ -1790,28 +1782,6 @@ checksum = "7cd915d99f24784cdc19fd37ef22b97e3ff0ae756c7e492e9fbfe897d61e2aec"
 dependencies = [
  "indenter",
  "once_cell",
-]
-
-[[package]]
-name = "failure"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d32e9bd16cc02eae7db7ef620b392808b89f6a5e16bb3497d159c6b92a0f4f86"
-dependencies = [
- "backtrace",
- "failure_derive",
-]
-
-[[package]]
-name = "failure_derive"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa4da3c766cd7a0db8242e326e9e4e081edd567072893ed320008189715366a4"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "synstructure",
 ]
 
 [[package]]
@@ -3649,15 +3619,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_bytes"
-version = "0.11.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b8497c313fd43ab992087548117643f6fcd935cbf36f176ffda0aacf9591734"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "serde_derive"
 version = "1.0.215"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3907,18 +3868,6 @@ name = "sync_wrapper"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7065abeca94b6a8a577f9bd45aa0867a2238b74e8eb67cf10d492bc39351394"
-
-[[package]]
-name = "synstructure"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f36bdaa60a83aca3921b5259d5400cbf5e90fc51931376a9bd4a0eb79aa7210f"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "unicode-xid",
-]
 
 [[package]]
 name = "tap"

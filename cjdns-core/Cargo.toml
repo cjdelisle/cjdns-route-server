@@ -16,6 +16,8 @@ lazy_static = { workspace = true }
 regex = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
+cjdns-keys = { workspace = true }
+eyre = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true, features = ["small_rng"] }

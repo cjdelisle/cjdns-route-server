@@ -8,10 +8,12 @@ pub use self::encoding::*;
 pub use self::pathhop::*;
 pub use self::routinglabel::*;
 pub use self::strconv::*;
+pub use self::addr::*;
 
 mod encoding;
 mod pathhop;
 mod routinglabel;
 mod strconv;
+mod addr;
 
 pub mod splice;

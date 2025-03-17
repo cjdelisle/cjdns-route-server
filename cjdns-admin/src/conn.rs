@@ -1,9 +1,14 @@
 //! UDP connection to the CJDNS Router.
 
+use std::convert::TryFrom;
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
+use bencode::object::{Dict, Object, Get};
+use cjdns_bytes::message::Message;
+use eyre::eyre;
 use sodiumoxide::crypto::hash::sha256::hash;
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
@@ -11,7 +16,6 @@ use tokio::time;
 
 use crate::errors::{ConnOptions, Error};
 use crate::func_list::Funcs;
-use crate::msgs::{self, Empty, Request};
 use crate::txid::Counter;
 use crate::ConnectionOptions;
 
@@ -48,12 +52,12 @@ impl Connection {
     }
 
     async fn probe_connection(&mut self, opts: ConnectionOptions) -> Result<(), Error> {
-        self.call_func::<(), Empty>("ping", (), true, PING_TIMEOUT)
+        self.call_func("ping", Dict::new(), true, PING_TIMEOUT)
             .await
             .map_err(|_| Error::ConnectError(ConnOptions::wrap(&opts)))?;
 
         if !self.password.is_empty() {
-            self.call_func::<(), Empty>("AuthorizedPasswords_list", (), false, DEFAULT_TIMEOUT)
+            self.call_func("AuthorizedPasswords_list", Dict::new(), false, DEFAULT_TIMEOUT)
                 .await
                 .map_err(|_| Error::AuthError(ConnOptions::wrap(&opts)))?;
         }
@@ -65,45 +69,34 @@ impl Connection {
         let mut res = Funcs::new();
 
         for i in 0.. {
-            let ret: msgs::AvailableFnsResponsePayload = self
-                .call_func("Admin_availableFunctions", msgs::AvailableFnsQueryArg { page: i }, false, DEFAULT_TIMEOUT)
-                .await?;
-            let funcs = ret.available_fns;
+            let mut args = Dict::new();
+            args.insert("page", i);
+            let ret = self.call_func(
+                "Admin_availableFunctions",
+                args,
+                false,
+                DEFAULT_TIMEOUT
+            ).await?;
+            let funcs =
+                ret.get_dict("availableFunctions")
+                .map_err(|e|Error::Protocol(eyre!("Failed getting availableFunctions {e}")))?;
 
             if funcs.is_empty() {
                 break; // Empty answer - no more pages
             }
 
-            res.add_funcs(funcs);
+            res.add_funcs(funcs).map_err(|e|Error::Protocol(e))?;
         }
 
         Ok(res)
     }
 
-    /// Call remote function on CJDNS router.
-    ///
-    /// Example:
-    /// ```no_run
-    /// # use cjdns_admin::cjdns_invoke;
-    /// # use cjdns_admin::{ArgValues, msgs::GenericResponsePayload};
-    /// # async fn test() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let mut conn = cjdns_admin::connect(None).await?;
-    /// let res: GenericResponsePayload = conn.invoke("MyFunc", ArgValues::new().add("arg1", 42).add("arg2", "foobar")).await?;
-    /// # Ok(())}
-    /// ```
-    /// or use macro `cjdns_invoke` to make it even more concise:
-    /// ```no_run
-    /// # use cjdns_admin::cjdns_invoke;
-    /// # async fn test() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let mut conn = cjdns_admin::connect(None).await?;
-    /// let res = cjdns_invoke!(conn, "FuncName", "arg1" = 42, "arg2" = "foobar").await?;
-    /// # Ok(())}
-    /// ```
-    pub async fn invoke<A: msgs::Args, P: msgs::Payload>(&mut self, remote_fn_name: &str, args: A) -> Result<P, Error> {
+    /// Call remote function on CJDNS router
+    pub async fn invoke(&mut self, remote_fn_name: &str, args: Dict<'_>) -> Result<Dict<'static>, Error> {
         self.call_func(remote_fn_name, args, false, DEFAULT_TIMEOUT).await
     }
 
-    async fn call_func<A: msgs::Args, P: msgs::Payload>(&mut self, remote_fn_name: &str, args: A, disable_auth: bool, timeout: Duration) -> Result<P, Error> {
+    async fn call_func(&mut self, remote_fn_name: &str, args: Dict<'_>, disable_auth: bool, timeout: Duration) -> Result<Dict<'static>, Error> {
         let call = async {
             if disable_auth || self.password.is_empty() {
                 self.call_func_no_auth(remote_fn_name, args).await
@@ -114,25 +107,29 @@ impl Connection {
         time::timeout(timeout, call).await.map_err(|_| Error::TimeOut(timeout))?
     }
 
-    async fn call_func_no_auth<A: msgs::Args, P: msgs::Payload>(&mut self, remote_fn_name: &str, args: A) -> Result<P, Error> {
-        let msg = msgs::Query {
-            txid: self.counter.next().to_string(),
-            q: remote_fn_name.to_string(),
-            args,
-        };
+    async fn call_func_no_auth(&mut self, remote_fn_name: &str, args: Dict<'_>) -> Result<Dict<'static>, Error> {
+        let txid = self.counter.next().to_string();
+        let mut msg = Dict::new();
+        msg.insert("txid", &txid);
+        msg.insert("q", remote_fn_name);
+        msg.insert("args", args);
 
-        let resp: msgs::GenericResponse<P> = self.send_msg(&msg).await?;
-        check_txid(&msg.txid, &resp.txid)?;
-        check_remote_error(&resp.error)?;
+        let resp = Dict::try_from(self.send_msg(msg).await?)
+            .map_err(|e|Error::Protocol(eyre!("Error receiving from cjdns {e}")))?;
+        check_txid(&txid, &resp)?;
+        check_remote_error(&resp)?;
 
-        Ok(resp.payload)
+        Ok(resp)
     }
 
-    async fn call_func_auth<A: msgs::Args, P: msgs::Payload>(&mut self, remote_fn_name: &str, args: A) -> Result<P, Error> {
+    async fn call_func_auth(&mut self, remote_fn_name: &str, args: Dict<'_>) -> Result<Dict<'static>, Error> {
         // Ask cjdns for a cookie first
         let new_cookie = {
-            let resp: msgs::CookieResponsePayload = self.call_func_no_auth("cookie", ()).await?;
-            resp.cookie
+            let resp = self.call_func_no_auth("cookie", Dict::new()).await?;
+            resp.try_get_str("cookie")
+                .map_err(|e|Error::Protocol(eyre!("Error getting cookie: {e}")))?
+                .ok_or_else(||Error::Protocol(eyre!("cookie missing")))?
+                .to_string()
         };
 
         // Hash password with salt
@@ -142,53 +139,69 @@ impl Connection {
             hex::encode(digest)
         };
 
+        let txid = self.counter.next().to_string();
+
         // Prepare message with initial hash
-        let mut msg = msgs::AuthQuery {
-            txid: self.counter.next().to_string(),
-            q: "auth".to_string(),
-            aq: remote_fn_name.to_string(),
-            args,
-            cookie: new_cookie,
-            hash: passwd_hash,
-        };
+        let mut req = Dict::new();
+        req.insert("txid", &txid);
+        req.insert("q", "auth");
+        req.insert("aq", remote_fn_name);
+        req.insert("args", args);
+        req.insert("cookie", new_cookie);
+        req.insert("hash", passwd_hash);
 
         // Update message's hash
         let msg_hash = {
-            let msg_bytes = msg.to_bencode()?;
-            let digest = hash(&msg_bytes);
+            let mut msg = Message::new();
+            cjdns_bencode::standard::serialize(&mut msg, &Object::from(req.clone()), 0)
+                .map_err(|e|Error::Protocol(e))?;
+            let digest = hash(&msg.as_vec());
             hex::encode(digest)
         };
-        msg.hash = msg_hash;
+        req.insert("hash", msg_hash);
 
         // Send/receive
-        let resp: msgs::GenericResponse<P> = self.send_msg(&msg).await?;
-        check_txid(&msg.txid, &resp.txid)?;
-        check_remote_error(&resp.error)?;
+        let resp = self.send_msg(req).await?;
+        check_txid(&txid, &resp)?;
+        check_remote_error(&resp)?;
 
-        Ok(resp.payload)
+        Ok(resp)
     }
 
-    async fn send_msg<RQ, RS>(&mut self, req: &RQ) -> Result<RS, Error>
-    where
-        RQ: msgs::Request,
-        RS: msgs::Response,
+    async fn send_msg(&mut self, req: Dict<'_>) -> Result<Dict<'static>, Error>
     {
         // Send encoded request
-        let msg = req.to_bencode()?;
+        let mut msg = Message::new();
+        cjdns_bencode::standard::serialize(&mut msg, &Object::from(req), 0)
+            .map_err(|e|Error::Protocol(e))?;
         //dbg!(String::from_utf8_lossy(&msg));
         let socket = self.socket.lock().await;
-        socket.send(&msg).await.map_err(|e| Error::NetworkOperation(e))?;
+        socket.send(&msg.as_vec()).await.map_err(|e| Error::NetworkOperation(e))?;
 
         // MTU of loopback
         let mut buf = [0; 65535];
 
         // Reseive encoded response synchronously
         let received = socket.recv(&mut buf).await.map_err(|e| Error::NetworkOperation(e))?;
-        let response = &buf[..received];
+        msg.clear();
+        msg.write_all(&buf[..received])
+            .map_err(|e|Error::NetworkOperation(e))?;
         //dbg!(String::from_utf8_lossy(&response));
 
         // Decode response
-        RS::from_bencode(response)
+        let res = cjdns_bencode::standard::Parser::<
+            32,
+            true
+        >::parse(&mut msg)
+            .map_err(|e|{
+                Error::Protocol(eyre::eyre!("Error parsing response: {}, response: {}",
+                    e, String::from_utf8_lossy(&buf[..received])))
+            })?;
+        let res = res.into_dict()
+            .map_err(|_|Error::Protocol(eyre::eyre!("Response not a dict, response: {}",
+                String::from_utf8_lossy(&buf[..received]))))?;
+
+        Ok(res.into_owned())
     }
 }
 
@@ -204,19 +217,26 @@ async fn create_udp_socket_sender(addr: &str, port: u16) -> Result<UdpSocket, Er
 }
 
 #[inline]
-fn check_txid(sent_txid: &String, received_txid: &String) -> Result<(), Error> {
-    if sent_txid == received_txid {
+fn check_txid(sent_txid: &String, received: &Dict<'_>) -> Result<(), Error> {
+    let received_txid = received.try_get_str("txid")
+        .map_err(|e|Error::Protocol(eyre!("Error getting txid {e}")))?
+        .ok_or_else(||Error::Protocol(eyre!("txid missing")))?;
+    if sent_txid == &received_txid {
         Ok(())
     } else {
         Err(Error::BrokenTx {
             sent_txid: sent_txid.clone(),
-            received_txid: received_txid.clone(),
+            received_txid: received_txid.to_string(),
         })
     }
 }
 
-#[inline]
-fn check_remote_error(remote_error_msg: &str) -> Result<(), Error> {
+fn check_remote_error(received: &Dict<'_>) -> Result<(), Error> {
+    let remote_error_msg = received.try_get_str("error")
+        .map_err(|e|Error::Protocol(eyre!("Error getting error field: {e}")))?;
+    let Some(remote_error_msg) = remote_error_msg else {
+        return Ok(());
+    };
     if remote_error_msg.is_empty() || remote_error_msg.eq_ignore_ascii_case("none") {
         Ok(())
     } else {

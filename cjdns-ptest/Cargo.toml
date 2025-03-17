@@ -20,3 +20,4 @@ cjdns-admin = { workspace = true }
 cjdns-keys = { workspace = true }
 cjdns-bytes = { workspace = true }
 cjdns-util-http = { workspace = true }
+cjdns-bencode = { workspace = true }

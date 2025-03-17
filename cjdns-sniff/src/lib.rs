@@ -32,14 +32,14 @@
 
 #![deny(missing_docs)]
 
-use std::io;
+use std::io::{self, Write};
 
 use thiserror::Error;
 use tokio::net::UdpSocket;
 
 pub use cjdns_admin::Connection;
-use cjdns_admin::{cjdns_invoke, ReturnValue};
-use cjdns_bencode::{BValue, BencodeError};
+use cjdns_admin::cjdns_invoke;
+use cjdns_bencode::object::{Dict, Object, Get};
 use cjdns_bytes::{ParseError, SerializeError};
 pub use cjdns_ctrl::CtrlMessage;
 pub use cjdns_hdr::ContentType;
@@ -72,7 +72,8 @@ pub enum Content {
     /// Raw binary of the content, if it cannot be decoded into neither `content_benc` nor `content`
     Bytes(Vec<u8>),
     /// If the `content_type` is `ContentType::Cjdht` this is the b-decoded content
-    Benc(BValue),
+    /// This is always a Dict type
+    Benc(Dict<'static>),
     /// If the message is control message (`route_header.is_ctrl == true`) this is the decoded control message
     Ctrl(CtrlMessage),
 }
@@ -105,10 +106,9 @@ impl Sniffer {
                 .map_err(|e| ConnectError::RpcError(e))?;
             // Expected response is of form `{ "handlers" : [ { "type" : 0xFFF1, "udpPort" : 1234 }, { "type" : 0xFFF2, "udpPort" : 1235 }, ... ] }`
             let handlers = res
-                .get("handlers")
-                .ok_or(ConnectError::BadResponse)?
-                .as_list(ReturnValue::as_int_map)
-                .map_err(|_| ConnectError::BadResponse)?;
+                .try_get_list("handlers")
+                .map_err(|_| ConnectError::BadResponse)?
+                .ok_or_else(|| ConnectError::BadResponse)?;
 
             if handlers.is_empty() {
                 // Last page has empty handlers list
@@ -116,8 +116,12 @@ impl Sniffer {
             }
 
             // Process handlers
-            for handler in handlers {
-                if let (Some(&handler_content_type), Some(&handler_udp_port)) = (handler.get("type"), handler.get("udpPort")) {
+            for vhandler in handlers.iter() {
+                let handler = vhandler.as_dict().map_err(|_| ConnectError::BadResponse)?;
+                if let (Ok(Some(handler_content_type)), Ok(Some(handler_udp_port))) = (
+                    handler.try_get_int("type"),
+                    handler.try_get_int("udpPort"),
+                ) {
                     if handler_content_type < 0 || handler_content_type > u32::MAX as i64 || handler_udp_port <= 0 || handler_udp_port > u16::MAX as i64 {
                         return Err(ConnectError::BadResponse);
                     }
@@ -184,8 +188,10 @@ impl Sniffer {
                 content: Content::Benc(content_benc),
                 ..
             } if *content_type == ContentType::Cjdht => {
-                let bytes = content_benc.encode().map_err(|e| SendError::BencodeError(e))?;
-                Some(bytes)
+                let mut msg = cjdns_bytes::message::Message::new();
+                cjdns_bencode::standard::serialize(&mut msg, &Object::from(content_benc.clone()), 4)
+                    .map_err(|e| SendError::BencodeError(e))?;
+                Some(msg.as_vec())
             }
             Message {
                 route_header,
@@ -281,8 +287,13 @@ impl Sniffer {
         let content = match (content_type, data_bytes, is_ctrl) {
             // Bencoded content
             (ContentType::Cjdht, Some(data_bytes), false) => {
-                let content = BValue::decode(data_bytes).map_err(|_| ParseError::InvalidData("failed to decode bencoded content"))?;
-                Content::Benc(content)
+                let mut msg = cjdns_bytes::message::Message::new();
+                msg.write_all(data_bytes).map_err(|_| ParseError::InvalidPacketSize)?;
+                let content = cjdns_bencode::standard::Parser::<32, true>::parse(&mut msg)
+                    .map_err(|_| ParseError::InvalidData("failed to decode bencoded content"))?;
+                let cdict = content.into_dict()
+                        .map_err(|_| ParseError::InvalidData("bencoded content not a Dict"))?;
+                Content::Benc(cdict.into_owned())
             }
 
             // Control message content
@@ -338,7 +349,7 @@ pub enum SendError {
 
     /// Bencode serialization error
     #[error("Data serialization error: {0}")]
-    BencodeError(BencodeError),
+    BencodeError(eyre::ErrReport),
 
     /// UDP socket error
     #[error("Failed to connect to CJDNS router: {0}")]

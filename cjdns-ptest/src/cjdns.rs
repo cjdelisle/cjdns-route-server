@@ -1,7 +1,8 @@
 use std::{net::SocketAddr, sync::Arc};
 
+use cjdns_bencode::object::{Dict,Get};
 use eyre::{bail, Result};
-use cjdns_admin::{ArgValues, Connection, Opts};
+use cjdns_admin::{Connection, Opts};
 use cjdns_bytes::dnsseed::PeeringLine;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -59,16 +60,15 @@ impl Cjdns {
 
         let (path, _) = parse_address(address)?;
         log::debug!("SwitchPinger_ping({path}, snode=1)");
-        let reply: SwitchPingReply = self.conn.lock().await.invoke(
-            "SwitchPinger_ping",
-            ArgValues::new()
-                .add("path", path)
-                .add("snode", 1),
-        ).await?;
-        if reply.result != "pong" {
-            bail!("Got result: {}", reply.result);
+        let mut args = Dict::new();
+        args.insert("path", path.to_string());
+        args.insert("snode", 1);
+        let reply =
+            self.conn.lock().await.invoke("SwitchPinger_ping", args).await?;
+        if reply.get_str("result")? != "pong" {
+            bail!("Got result: {}", reply.get_str("result")?);
         }
-        Ok(reply.snode)
+        Ok(reply.try_get("snode")?)
     }
 
     pub async fn begin_conn(&self, iface_num: i64, worker: usize, peer: &PeeringLine) -> Result<()> {
@@ -77,17 +77,15 @@ impl Cjdns {
         //     [--peerName=<String>] [--version=<Int>]
         // Remote error will cause invoke() to fail.
         log::debug!("UDPInterface_beginConnection({})", &peer.address);
-        self.conn.lock().await.invoke(
-            "UDPInterface_beginConnection",
-            ArgValues::new()
-                .add("address", peer.address.clone())
-                .add("publicKey", peer.public_key.clone())
-                .add("interfaceNumber", iface_num)
-                .add("login", peer.login.clone())
-                .add("password", peer.password.clone())
-                .add("peerName", format!("TESTING/{}/{}", worker, peer.address))
-                .add("version", peer.version as i64),
-        ).await?;
+        let mut args = Dict::new();
+        args.insert("address", peer.address.clone());
+        args.insert("publicKey", peer.public_key.clone());
+        args.insert("interfaceNumber", iface_num);
+        args.insert("login", peer.login.clone());
+        args.insert("password", peer.password.clone());
+        args.insert("peerName", format!("TESTING/{}/{}", worker, peer.address));
+        args.insert("version", peer.version as i64);
+        self.conn.lock().await.invoke("UDPInterface_beginConnection", args).await?;
         Ok(())
     }
 
@@ -107,10 +105,9 @@ impl Cjdns {
             }
             let (_, key) = parse_address(&p.addr)?;
             log::debug!("InterfaceController_disconnectPeer({})", key);
-            self.conn.lock().await.invoke(
-                "InterfaceController_disconnectPeer",
-                ArgValues::new().add("pubkey", key),
-            ).await?;
+            let mut args = Dict::new();
+            args.insert("pubkey", key.to_string());
+            self.conn.lock().await.invoke("InterfaceController_disconnectPeer", args).await?;
         }
         Ok(())
     }
@@ -135,12 +132,17 @@ impl Cjdns {
         let mut out = Vec::new();
         let mut page = 0;
         loop {
-            let ret: Ps = self.conn.lock().await.invoke(
+            let mut args = Dict::new();
+            args.insert("page", page);
+            let ret = self.conn.lock().await.invoke(
                 "InterfaceController_peerStats",
-                ArgValues::new().add("page", page),
+                args
             ).await?;
-            out.extend(ret.peers.into_iter());
-            if ret.more == Some(1) {
+            let peers = ret.get_list("peers")?;
+            for p in peers.iter() {
+                out.push(PeerStats::try_from(p.as_dict()?)?);
+            }
+            if ret.has("more") {
                 page += 1;
                 continue;
             } else {
@@ -156,10 +158,10 @@ pub struct PeerStats {
     pub addr: String,
     
     #[serde(rename = "bytesIn")]
-    pub bytes_in: u64,
+    pub bytes_in: i64,
     
     #[serde(rename = "bytesOut")]
-    pub bytes_out: u64,
+    pub bytes_out: i64,
     
     #[serde(rename = "duplicates")]
     pub duplicates: u32,
@@ -171,11 +173,11 @@ pub struct PeerStats {
     pub is_incoming: u8,
     
     #[serde(rename = "last")]
-    pub last: u64,
+    pub last: i64,
     
     #[serde(rename = "lladdr")]
     pub lladdr: String,
-    
+
     #[serde(rename = "lostPackets")]
     pub lost_packets: u32,
     
@@ -186,7 +188,7 @@ pub struct PeerStats {
     pub received_out_of_range: u32,
     
     #[serde(rename = "receivedPackets")]
-    pub received_packets: u64,
+    pub received_packets: i64,
     
     #[serde(rename = "recvKbps")]
     pub recv_kbps: u32,
@@ -199,6 +201,29 @@ pub struct PeerStats {
 
     pub user: Option<String>,
 }
+impl TryFrom<&Dict<'_>> for PeerStats {
+    type Error = eyre::Error;
+    fn try_from(d: &Dict<'_>) -> Result<Self> {
+        Ok(Self{
+            addr: d.get("addr")?,
+            bytes_in: d.get("bytesIn")?,
+            bytes_out: d.get("bytesOut")?,
+            duplicates: d.get("duplicates")?,
+            if_num: d.get("ifNum")?,
+            is_incoming: d.get("isIncoming")?,
+            last: d.get("last")?,
+            lladdr: d.get("lladdr")?,
+            lost_packets: d.get("lostPackets")?,
+            noise_proto: d.get("noiseProto")?,
+            received_out_of_range: d.get("receivedOutOfRange")?,
+            received_packets: d.get("receivedPackets")?,
+            recv_kbps: d.get("recvKbps")?,
+            send_kbps: d.get("sendKbps")?,
+            state: d.get("state")?,
+            user: d.try_get("user")?,
+        })
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 pub struct SwitchPingReply {
@@ -209,6 +234,19 @@ pub struct SwitchPingReply {
     pub data: Option<String>,
     pub snode: Option<String>,
 }
+impl TryFrom<&Dict<'_>> for SwitchPingReply {
+    type Error = eyre::Error;
+    fn try_from(d: &Dict<'_>) -> Result<Self> {
+        Ok(Self{
+            ms: d.get("ms")?,
+            path: d.get("path")?,
+            result: d.get("result")?,
+            version: d.try_get("version")?, 
+            data: d.try_get("data")?,
+            snode: d.try_get("snode")?,
+        })
+    }
+}
 
 #[derive(Deserialize, Default, Clone, PartialEq, Eq, Debug)]
 struct Interface {
@@ -218,23 +256,29 @@ struct Interface {
     pub if_num: i64,
     pub name: String,
 }
+impl TryFrom<&Dict<'_>> for Interface {
+    type Error = eyre::Error;
+    fn try_from(d: &Dict<'_>) -> Result<Self> {
+        Ok(Self{
+            beacon_state: d.get("beaconState")?,
+            if_num: d.get("ifNum")?,
+            name: d.get("name")?,
+        })
+    }
+}
 
 async fn get_interfaces(cjdns: &Cjdns) -> Result<Vec<Interface>> {
-    #[derive(Deserialize, Default, Clone, PartialEq, Eq, Debug)]
-    struct Interfaces {
-        pub ifaces: Vec<Interface>,
-        pub more: Option<u64>,
-        pub total: i64,
-    }
     let mut out = Vec::new();
     let mut page = 0;
     loop {
-        let ret: Interfaces = cjdns.conn.lock().await.invoke(
-            "InterfaceController_interfaces",
-            ArgValues::new().add("page", page),
-        ).await?;
-        out.extend(ret.ifaces.into_iter());
-        if ret.more == Some(1) {
+        let mut args = Dict::new();
+        args.insert("page", page);
+        let ret =
+            cjdns.conn.lock().await.invoke("InterfaceController_interfaces", args).await?;
+        for iface in ret.get_list("ifaces")?.iter() {
+            out.push(Interface::try_from(iface.as_dict()?)?);
+        }
+        if ret.has("more") {
             page += 1;
             continue;
         } else {

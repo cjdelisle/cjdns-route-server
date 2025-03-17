@@ -59,7 +59,7 @@ pub enum Error {
 
     /// Failed to serialize/deserialize protocol message (using *bencode*).
     #[error("Encoding error: {0}")]
-    Protocol(#[source] bencode::Error),
+    Protocol(#[source] eyre::ErrReport),
 
     /// Remote invocation failed and returned `error` message.
     #[error("Remote call error: {0}")]

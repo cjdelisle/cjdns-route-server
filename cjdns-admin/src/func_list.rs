@@ -1,8 +1,9 @@
 //! List of remote functions.
 
-use std::fmt;
+use std::{convert::TryFrom, fmt};
 
-use crate::msgs::{RemoteFnArgsDescr, RemoteFnDescrs};
+use bencode::object::{Dict, Object, Get};
+use eyre::{bail, eyre, Context};
 
 /// List of available remote functions.
 #[derive(Clone, Default, PartialEq, Eq, Debug)]
@@ -35,12 +36,14 @@ pub struct Arg {
 /// Remote function argument type.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ArgType {
-    /// Integer argument.
+    /// Integer.
     Int,
-    /// String argument.
+    /// String.
     String,
-    /// Some other type which is not supported directly.
-    Other(String),
+    /// List.
+    List,
+    /// Dictionary.
+    Dict,
 }
 
 impl Funcs {
@@ -49,31 +52,44 @@ impl Funcs {
         Funcs(Vec::new())
     }
 
-    pub(super) fn add_funcs(&mut self, fns: RemoteFnDescrs) {
+    pub(super) fn add_funcs(&mut self, fns: &Dict<'_>) -> eyre::Result<()> {
         let Funcs(list) = self;
-        for (fn_name, fn_descr) in fns.into_iter() {
-            let func = Self::parse_fn(fn_name, fn_descr);
+        for (fn_name, fn_descr) in fns.iter() {
+            let func = Self::parse_fn(
+                String::from_utf8(fn_name.to_vec())?,
+                fn_descr.clone())?;
             list.push(func);
         }
         list.sort_by(|a, b| String::cmp(&a.name, &b.name));
+        Ok(())
     }
 
-    fn parse_fn(fn_name: String, fn_args: RemoteFnArgsDescr) -> Func {
-        let mut args = Vec::with_capacity(fn_args.len());
-        for (arg_name, arg_descr) in fn_args {
+    fn parse_fn(fn_name: String, fn_args: Object<'_>) -> eyre::Result<Func> {
+        // RemoteFnArgsDescr
+        let dict = fn_args.as_dict()?;
+        let mut args = Vec::with_capacity(dict.len());
+        for (arg_name, arg_descr) in dict.iter() {
+            let arg_name = String::from_utf8(arg_name.to_vec())?;
+            let arg_desc = arg_descr.as_dict()?;
+            let arg_type = arg_desc.try_get_str("type")?
+                .ok_or_else(|| eyre!("Missing arg type in argument {arg_name}"))?;
+            let typ = ArgType::try_from(arg_type).with_context(||
+                format!("Function {} argument {}: invalid type {}", fn_name, arg_name, arg_type))?;
+            let required = arg_desc.try_get_int("required")?
+                .ok_or_else(|| eyre!("Missing arg required in argument {arg_name}"))?;
             let arg = Arg {
                 name: arg_name,
-                required: arg_descr.required != 0,
-                typ: arg_descr.typ.into(),
+                required: required != 0,
+                typ,
             };
             args.push(arg);
         }
         args.sort_by(|a, b| bool::cmp(&a.required, &b.required).reverse().then(String::cmp(&a.name, &b.name)));
 
-        Func {
+        Ok(Func {
             name: fn_name,
             args: Args(args),
-        }
+        })
     }
 
     /// Iterator over functions in this list returned in alphabetical order.
@@ -101,14 +117,16 @@ impl Args {
     }
 }
 
-impl From<String> for ArgType {
-    #[inline]
-    fn from(s: String) -> Self {
-        match s.as_str() {
+impl TryFrom<&str> for ArgType {
+    type Error = eyre::Report;
+    fn try_from(s: &str) -> eyre::Result<Self> {
+        Ok(match s {
             "Int" => Self::Int,
             "String" => Self::String,
-            _ => Self::Other(s),
-        }
+            "List" => Self::List,
+            "Dict" => Self::Dict,
+            x => bail!("Unknown arg type {}", x)
+        })
     }
 }
 
@@ -147,80 +165,6 @@ impl fmt::Display for Arg {
 
 impl fmt::Display for ArgType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ArgType::Int => write!(f, "Int"),
-            ArgType::String => write!(f, "String"),
-            ArgType::Other(t) => write!(f, "{}", t),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use crate::msgs::RemoteFnArgDescr;
-
-    use super::*;
-
-    #[test]
-    fn test_funcs() {
-        let funcs = {
-            let fns1 = mk_funcs(vec![
-                ("fn_a", mk_args(vec![])),
-                ("fn_c", mk_args(vec![("arg1", true, "Int"), ("arg2", true, "String")])),
-            ]);
-            let fns2 = mk_funcs(vec![("fn_b", mk_args(vec![("c", false, "Int"), ("b", true, "Int"), ("a", false, "Int")]))]);
-
-            let mut funcs = Funcs::new();
-            funcs.add_funcs(fns1);
-            funcs.add_funcs(fns2);
-
-            funcs
-        };
-
-        let a = |nm: &str, req: bool, typ: ArgType| Arg {
-            name: nm.to_string(),
-            required: req,
-            typ,
-        };
-
-        assert_eq!(
-            funcs,
-            Funcs(vec![
-                Func {
-                    name: "fn_a".to_string(),
-                    args: Args(vec![])
-                },
-                Func {
-                    name: "fn_b".to_string(),
-                    args: Args(vec![a("b", true, ArgType::Int), a("a", false, ArgType::Int), a("c", false, ArgType::Int)])
-                },
-                Func {
-                    name: "fn_c".to_string(),
-                    args: Args(vec![a("arg1", true, ArgType::Int), a("arg2", true, ArgType::String)])
-                },
-            ])
-        );
-    }
-
-    fn mk_funcs(list: Vec<(&str, RemoteFnArgsDescr)>) -> RemoteFnDescrs {
-        let mut res = BTreeMap::new();
-        for (name, args) in list {
-            res.insert(name.to_string(), args);
-        }
-        res
-    }
-
-    fn mk_args(list: Vec<(&str, bool, &str)>) -> RemoteFnArgsDescr {
-        let mut res = BTreeMap::new();
-        for (name, req, typ) in list {
-            let descr = RemoteFnArgDescr {
-                required: if req { 1 } else { 0 },
-                typ: typ.to_string(),
-            };
-            res.insert(name.to_string(), descr);
-        }
-        res
+        write!(f, "{self:?}")
     }
 }

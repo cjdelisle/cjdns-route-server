@@ -1,11 +1,9 @@
-use bendy::value::Value;
-use eyre::bail;
-use std::collections::BTreeMap;
+use eyre::{Context,bail};
 use std::io::Read;
-use std::borrow::Cow;
 use cjdns_bytes::message::{Message, RWrite};
-use std::io::Result as IoResult;
 use std::io::Write;
+
+use crate::object::{Bstr, Dict, List, Object, Get};
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -20,8 +18,8 @@ impl From<ParseError> for eyre::ErrReport {
     }
 }
 
-struct JsonParser<R: Read> {
-    reader: R,
+struct JsonParser<'a, R: Read> {
+    reader: &'a mut R,
     current_line: usize,
     lax_mode: bool,
     last_chr: Option<u8>,
@@ -31,8 +29,8 @@ fn format_chr(chr: u8) -> String {
     char::from_u32(chr as _).map(|x|format!("{x}")).unwrap_or_else(||format!("CODE[{chr}]"))
 }
 
-impl<R: Read> JsonParser<R> {
-    fn new(reader: R, lax_mode: bool) -> Self {
+impl<'a, R: Read> JsonParser<'a, R> {
+    fn new(reader: &'a mut R, lax_mode: bool) -> Self {
         JsonParser {
             reader,
             current_line: 1,
@@ -41,14 +39,14 @@ impl<R: Read> JsonParser<R> {
         }
     }
 
-    fn parse(&mut self) -> Result<Value<'static>, ParseError> {
+    fn parse(&mut self) -> Result<Object<'a>, ParseError> {
         loop {
             let byte = self.next_meaningful_char()?;
             match byte {
-                b'{' => return self.parse_dict(),
-                b'[' => return self.parse_list(),
-                b'"' => return self.parse_string(),
-                b'0'..=b'9' | b'-' => return self.parse_int(byte),
+                b'{' => return Ok(self.parse_dict()?.into()),
+                b'[' => return Ok(self.parse_list()?.into()),
+                b'"' => return Ok(self.parse_string()?.into()),
+                b'0'..=b'9' | b'-' => return Ok(self.parse_int(byte)?.into()),
                 x => {
                     return Err(ParseError::MalformedInput(
                         format!("Unexpected char {}", format_chr(x)),
@@ -85,8 +83,8 @@ impl<R: Read> JsonParser<R> {
         Err(ParseError::MalformedInput("Ran out of content while parsing".into(), self.current_line))
     }
 
-    fn parse_dict(&mut self) -> Result<Value<'static>, ParseError> {
-        let mut dict = BTreeMap::new();
+    fn parse_dict(&mut self) -> Result<Dict<'a>, ParseError> {
+        let mut dict = Dict::new();
         let mut need_comma = false;
         loop {
             let byte = self.next_meaningful_char()?;
@@ -105,14 +103,10 @@ impl<R: Read> JsonParser<R> {
                             self.current_line)
                         );
                     }
-                    return Ok(Value::Dict(dict));
+                    return Ok(dict);
                 }
                 b'"' => {
-                    let key = if let Value::Bytes(x) = self.parse_string()? {
-                        x
-                    } else {
-                        unreachable!();
-                    };
+                    let key = self.parse_string()?;
                     let mut need_colon = true;
                     let val = loop {
                         let byte = self.next_meaningful_char()?;
@@ -161,8 +155,8 @@ impl<R: Read> JsonParser<R> {
         }
     }
 
-    fn parse_list(&mut self) -> Result<Value<'static>, ParseError> {
-        let mut list = vec![];
+    fn parse_list(&mut self) -> Result<List<'a>, ParseError> {
+        let mut list = List::new();
         let mut need_comma = false;
         loop {
             let byte = self.next_meaningful_char()?;
@@ -180,7 +174,7 @@ impl<R: Read> JsonParser<R> {
                             self.current_line)
                         );
                     }
-                    return Ok(Value::List(list));
+                    return Ok(list);
                 }
                 b',' => {
                     if !need_comma && !self.lax_mode {
@@ -205,7 +199,7 @@ impl<R: Read> JsonParser<R> {
         }
     }
 
-    fn parse_string(&mut self) -> Result<Value<'static>, ParseError> {
+    fn parse_string(&mut self) -> Result<Bstr<'a>, ParseError> {
         let mut result = vec![];
         while let Some(byte) = self.read_byte()? {
             match byte {
@@ -229,10 +223,10 @@ impl<R: Read> JsonParser<R> {
                 _ => result.push(byte),
             }
         }
-        Ok(Value::Bytes(Cow::Owned(result)))
+        Ok(result.into())
     }
 
-    fn parse_int(&mut self, first_byte: u8) -> Result<Value<'static>, ParseError> {
+    fn parse_int(&mut self, first_byte: u8) -> Result<i64, ParseError> {
         let mut num_str = String::new();
         num_str.push(first_byte as char);
         while let Some(byte) = self.read_byte()? {
@@ -245,7 +239,7 @@ impl<R: Read> JsonParser<R> {
             }
         }
         match num_str.parse::<i64>() {
-            Ok(num) => Ok(Value::Integer(num)),
+            Ok(num) => Ok(num),
             Err(_) => Err(ParseError::MalformedInput("Invalid integer".into(), self.current_line)),
         }
     }
@@ -308,17 +302,17 @@ fn serialize_string<W: RWrite>(writer: &mut W, s: &[u8]) -> std::io::Result<()> 
     Ok(())
 }
 
-fn serialize_reverse<'a, W: RWrite>(writer: &mut W, obj: &Value<'a>, indent_level: usize) -> std::io::Result<()> {
+fn serialize_reverse<'a, W: RWrite>(writer: &mut W, obj: &Object<'a>, indent_level: usize) -> std::io::Result<()> {
     let indent = "  ".repeat(indent_level);
     let indent2 = "  ".repeat(indent_level + 1);
 
     match obj {
-        Value::Bytes(s) => serialize_string(writer, s)?,
-        Value::Integer(i) => {
+        Object::Bytes(s) => serialize_string(writer, s)?,
+        Object::Integer(i) => {
             let int_str = i.to_string();
             writer.write_all(&int_str.as_bytes())?;
         }
-        Value::List(list) => {
+        Object::List(list) => {
             writer.write_all(b"]")?;
             if !list.is_empty() {
                 writer.write_all(indent.as_bytes())?;
@@ -334,7 +328,7 @@ fn serialize_reverse<'a, W: RWrite>(writer: &mut W, obj: &Value<'a>, indent_leve
             }
             writer.write_all(b"[")?;
         }
-        Value::Dict(dict) => {
+        Object::Dict(dict) => {
             writer.write_all(b"}")?;
             if !dict.is_empty() {
                 writer.write_all(indent.as_bytes())?;
@@ -358,48 +352,47 @@ fn serialize_reverse<'a, W: RWrite>(writer: &mut W, obj: &Value<'a>, indent_leve
     Ok(())
 }
 
-pub fn parse<R: Read>(reader: R, lax_mode: bool) -> Result<Value<'static>, ParseError> {
-    JsonParser::new(reader, lax_mode).parse()
+pub fn parse<'a, R: Read>(reader: &'a mut R, lax_mode: bool) -> eyre::Result<Object<'a>> {
+    Ok(JsonParser::new(reader, lax_mode).parse()?)
 }
 
-pub fn serialize<'a, W: RWrite>(writer: &mut W, obj: &Value<'a>) -> IoResult<()> {
-    serialize_reverse(writer, obj, 0)
+pub fn serialize<'a, W: RWrite>(writer: &mut W, obj: &Object<'a>) -> eyre::Result<()> {
+    Ok(serialize_reverse(writer, obj, 0)?)
 }
 
-pub fn read_conf(conf: &[u8]) -> eyre::Result<Value<'static>> {
+pub fn read_conf<'a>(conf: &'a [u8]) -> eyre::Result<Dict<'static>> {
     // Read json conf from stdin
-    let conf = match parse(conf, false) {
+    // let mut mconf = conf;
+    let mut mconf = conf;
+    let conf = match parse(&mut mconf, false) {
         Ok(x) => {
-            return Ok(x);
+            return Ok(x.into_dict().context("Conf type is not a dict")?.into_owned());
         },
         Err(_) => {
             // If there's an error, re-attempt with lax_mode = true
-            parse(conf, true)?
+            let mut mconf = conf;
+            parse(&mut mconf, true)?
+                .into_dict().context("Conf type is not a dict")?
+                .into_owned()
         }
     };
-    let d = match &conf {
-        Value::Dict(d) => Ok(d),
-        _ => Err(eyre::eyre!("Expected dict as top-level object"))
-    }?;
-    let ver = match d.get(&b"version"[..]) {
-        Some(Value::Integer(x)) => Ok(*x),
-        None => Ok(0),
-        _ => Err(eyre::eyre!("Expected integer version field"))
-    }?;
+    let ver = conf.try_get_int("version")
+        .context("Reading version field from conf")?
+        .unwrap_or(0);
     if ver > 1 {
         bail!("Conf version is {} but it does not parse correctly", ver);
     }
     Ok(conf)
 }
 
-fn conf_fix_list_order_quirk(conf: &mut Value<'static>) -> eyre::Result<()> {
+fn conf_fix_list_order_quirk(conf: &mut Object<'_>) -> eyre::Result<()> {
     match conf {
-        Value::Dict(d) => {
+        Object::Dict(d) => {
             for (_, v) in d.iter_mut() {
                 conf_fix_list_order_quirk(v)?;
             }
         }
-        Value::List(l) => {
+        Object::List(l) => {
             for v in l.iter_mut() {
                 conf_fix_list_order_quirk(v)?;
             }
@@ -410,37 +403,38 @@ fn conf_fix_list_order_quirk(conf: &mut Value<'static>) -> eyre::Result<()> {
     Ok(())
 }
 
-fn conf_check_fix_list_order_quirk(conf: &mut Value<'static>) -> eyre::Result<()> {
+fn conf_check_fix_list_order_quirk(conf: &mut Dict<'_>) -> eyre::Result<()> {
     // Check that it's a dict, if so, check that it has "security", if so check if
     // the "setupComplete" is the FIRST item, if so reverse.
-    let should_swap = match conf {
-        Value::Dict(d) => {
-            if let Some(Value::List(security)) = d.get_mut(&b"security"[..]) {
-                if let Some(Value::Dict(first)) = security.get_mut(0) {
-                    first.get(&b"setupComplete"[..]).is_some()
-                } else {
-                    bail!("Expected dict as first item in security list");
-                }
+    let should_swap = {
+        if let Ok(Some(security)) = conf.try_get_list("security") {
+            if let Ok(Some(first)) = security.try_get_dict(&0) {
+                first.try_get_dict("setupComplete")?.is_some()
             } else {
-                bail!("Expected list as security field");
+                bail!("Expected dict as first item in security list");
             }
+        } else {
+            bail!("Expected list as security field");
         }
-        _ => { bail!("Expected dict as top-level object"); }
     };
     if should_swap {
-        conf_fix_list_order_quirk(conf)?;
+        for (_, v) in conf.iter_mut() {
+            conf_fix_list_order_quirk(v)?;
+        }
         eprintln!("Fixed list order quirk");
     }
     Ok(())
 }
 
 pub fn clean_conf() -> eyre::Result<()> {
-    let mut conf = Vec::new();
-    std::io::stdin().read_to_end(&mut conf)?;
-    let mut conf = read_conf(&conf)?;
+    let mut conf = {
+        let mut conf = Vec::new();
+        std::io::stdin().read_to_end(&mut conf)?;
+        read_conf(&conf)?
+    };
     conf_check_fix_list_order_quirk(&mut conf)?;
     let mut msg = Message::new();
-    serialize(&mut msg, &conf)?;
+    serialize(&mut msg, &Object::from(conf))?;
     std::io::stdout().write_all(&msg.as_vec()[..])?;
     Ok(())
 }
@@ -448,10 +442,8 @@ pub fn clean_conf() -> eyre::Result<()> {
 #[cfg(test)]
 mod test {
     use std::io::Write;
-    use bendy::encoding::ToBencode;
     use cjdns_bytes::message::Message;
-
-    // use crate::interface::wire::message::Message;
+    use crate::object::{Object,Get};
 
     use super::{parse, serialize, read_conf};
 
@@ -765,32 +757,19 @@ mod test {
     fn test() {
         let mut msg = Message::new();
         msg.write_all(CONF.as_bytes()).unwrap();
-        let res = parse(&mut msg, false).unwrap();
-        let d = match res.clone() {
-            bendy::value::Value::Dict(d) => d,
-            _ => panic!("Wrong type"),
-        };
-        let sec = d.get(&b"security"[..]).unwrap();
-        let sec = match sec {
-            bendy::value::Value::List(d) => d,
-            _ => panic!("Wrong type"),
-        };
-        let sec0 = sec.get(0).unwrap();
-        let sec0 = match sec0 {
-            bendy::value::Value::Dict(d) => d,
-            _ => panic!("Wrong type"),
-        };
+        let res = parse(&mut msg, false)
+            .unwrap().into_dict().unwrap();
+        let sec = res.try_get_list("security").unwrap().unwrap();
+        let sec0 = sec.try_get_dict(&0).unwrap().unwrap();
         // check that sec0 has "setuser" key
-        let _ = sec0.get(&b"setuser"[..]).unwrap();
+        sec0.has("setuser");
 
-        msg.clear();
-        serialize(&mut msg, &res).unwrap();
-        println!("{}", String::from_utf8_lossy(&msg.as_vec()));
+        let mut msg2 = Message::new();
+        serialize(&mut msg2, &Object::from(res.clone())).unwrap();
+        println!("{}", String::from_utf8_lossy(&msg2.as_vec()));
 
-        let res2 = parse(&mut msg, false).unwrap();
-        let bres = res.to_bencode().unwrap();
-        let bres2 = res2.to_bencode().unwrap();
-        assert_eq!(bres, bres2);
+        let res2 = parse(&mut msg2, false).unwrap();
+        assert_eq!(res, res2.into_dict().unwrap());
     }
 
     #[test]

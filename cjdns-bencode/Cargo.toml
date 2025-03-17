@@ -2,16 +2,14 @@
 name = "cjdns-bencode"
 version = "0.1.0"
 authors = [
-    "Alex Kordys <a.kordys@mixbytes.io>"
+    "Alex Kordys <a.kordys@mixbytes.io>",
+    "Caleb James DeLisle <cjd@cjdns.fr>"
 ]
 edition = "2018"
 license = "GPL-3.0-or-later"
 description = "cjdns Bencode library"
 
 [dependencies]
-bendy = { workspace = true }
-hex = { workspace = true }
-serde = { workspace = true }
 eyre = { workspace = true }
 
 cjdns-bytes = { workspace = true }

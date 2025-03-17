@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use eyre::{eyre, Error};
 use tokio::{select, signal};
 
-use cjdns_bencode::BValue;
+use cjdns_bencode::object::{Dict,Get};
 use cjdns_hdr::ParseError;
 use cjdns_keys::CJDNS_IP6;
 use cjdns_sniff::{Content, ContentType, Message, ReceiveError, Sniffer};
@@ -67,31 +67,29 @@ fn dump_msg(msg: Message) -> Result<(), Error> {
     Ok(())
 }
 
-fn dump_bencode(benc: BValue, buf: &mut Vec<String>) -> Result<(), ()> {
-    let q = if let Some(q) = benc.get_dict_value("q")? {
+fn dump_bencode(benc: Dict<'_>, buf: &mut Vec<String>) -> eyre::Result<()> {
+    let q = if let Some(q) = benc.try_get_str("q")? {
         Some(q)
-    } else if let Some(sq) = benc.get_dict_value("sq")? {
+    } else if let Some(sq) = benc.try_get_str("sq")? {
         Some(sq)
     } else {
         None
     };
 
-    if let Some(qb) = q {
-        let q = qb.as_string()?;
+    if let Some(q) = q {
         let is_fn = q == "fn";
-        buf.push(q);
+        buf.push(q.to_string());
         if is_fn {
-            if let Some(tar) = benc.get_dict_value("tar")? {
-                let tar = tar.as_bytes()?;
-                let tar = CJDNS_IP6::try_from(tar.as_slice()).map_err(|_| ())?;
+            if let Some(tar) = benc.try_get_bytes("tar")? {
+                let tar = CJDNS_IP6::try_from(&tar[..])?;
                 buf.push(tar.to_string());
             }
         }
     } else {
         buf.push("reply".to_string())
     }
-    if let Some(txid) = benc.get_dict_value("txid")? {
-        buf.push(hex::encode(txid.as_bytes().unwrap_or(Vec::new())));
+    if let Some(txid) = benc.try_get_bytes("txid")? {
+        buf.push(hex::encode(txid));
     }
     Ok(())
 }

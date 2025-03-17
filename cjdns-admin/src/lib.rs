@@ -7,17 +7,12 @@ extern crate cjdns_bencode as bencode;
 pub use crate::config::Opts;
 pub use crate::conn::Connection;
 pub use crate::errors::Error;
-pub use crate::func_args::{ArgName, ArgValue, ArgValues};
 pub use crate::func_list::{Arg, ArgType, Args, Func, Funcs};
-pub use crate::func_ret::ReturnValue;
 
 mod config;
 mod conn;
 mod errors;
-mod func_args;
 mod func_list;
-mod func_ret;
-pub mod msgs;
 mod txid;
 
 #[derive(Clone, Default, PartialEq, Eq, Debug)]
@@ -51,9 +46,15 @@ pub async fn connect(opts: Option<Opts>) -> Result<Connection, Error> {
 #[macro_export]
 macro_rules! cjdns_invoke {
     ($cjdns:expr, $fn_name:literal) => {
-        $cjdns.invoke::<_, $crate::msgs::GenericResponsePayload>($fn_name, $crate::ArgValues::new())
+        $cjdns.invoke($fn_name, cjdns_bencode::object::Dict::new())
     };
     ($cjdns:expr, $fn_name:literal, $( $arg_name:literal = $arg_value:expr ),*) => {
-        $cjdns.invoke::<_, $crate::msgs::GenericResponsePayload>($fn_name, $crate::ArgValues::new() $( .add($arg_name, $arg_value) )*)
+        $cjdns.invoke($fn_name, {
+            let mut d = cjdns_bencode::object::Dict::new();
+            $(
+                d.insert($arg_name, $arg_value);
+            )*
+            d
+        })
     };
 }

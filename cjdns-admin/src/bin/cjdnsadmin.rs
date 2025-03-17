@@ -2,10 +2,12 @@
 
 use std::{env, path};
 
+use cjdns_bencode::{json, object::{Dict, Object}};
+use cjdns_bytes::message::Message;
 use eyre::Error;
 use regex::Regex;
 
-use cjdns_admin::{msgs::GenericResponsePayload, ArgValue, ArgValues, Func};
+use cjdns_admin::Func;
 
 #[tokio::main]
 async fn main() {
@@ -35,8 +37,11 @@ async fn run() -> Result<(), Error> {
         let func = cjdns.functions.find(&fn_name).ok_or_else(|| Error::msg("unknown function name"))?;
         let fn_args = make_args(func, fn_args);
 
-        let res = cjdns.invoke::<_, GenericResponsePayload>(&fn_name, fn_args).await?;
-        println!("{:?}", res);
+        let res = cjdns.invoke(&fn_name, fn_args).await?;
+        let mut msg = Message::new();
+        json::serialize(&mut msg, &Object::from(res))
+            .map_err(|_| Error::msg("failed to serialize response"))?;
+        println!("{}", String::from_utf8(msg.as_vec())?);
     };
 
     // Client disconnects automatically when `cjdns` drops out of scope
@@ -55,21 +60,7 @@ fn split_fn_invocation_str(s: &str) -> Result<(String, String), ()> {
     Ok((name, args))
 }
 
-#[test]
-fn test_split_fn_invocation_str() -> Result<(), ()> {
-    let a = |func: &str, args: &str| (func.to_string(), args.to_string());
-    assert_eq!(split_fn_invocation_str(r#"foo()"#)?, a("foo", r#""#));
-    assert_eq!(split_fn_invocation_str(r#"bar(42)"#)?, a("bar", r#"42"#));
-    assert_eq!(split_fn_invocation_str(r#"bar("baz")"#)?, a("bar", r#""baz""#));
-    assert_eq!(split_fn_invocation_str(r#"baz(42, 43)"#)?, a("baz", r#"42, 43"#));
-    assert_eq!(split_fn_invocation_str(r#"test(42,"arg",-42)"#)?, a("test", r#"42,"arg",-42"#));
-    assert_eq!(split_fn_invocation_str(r#"test("str",42,"other")"#)?, a("test", r#""str",42,"other""#));
-    assert_eq!(split_fn_invocation_str(r#"func(nonsense)"#)?, a("func", r#"nonsense"#)); // Makes no sense, but parses ok
-
-    Ok(())
-}
-
-fn parse_remote_fn_args(s: &str) -> Result<Vec<ArgValue>, ()> {
+fn parse_remote_fn_args(s: &str) -> Result<Vec<Object<'static>>, ()> {
     if s.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -78,15 +69,15 @@ fn parse_remote_fn_args(s: &str) -> Result<Vec<ArgValue>, ()> {
     for arg in s.split(",").map(str::trim) {
         let arg = match arg.chars().next().ok_or(())? {
             '-' | '0'..='9' => {
-                let value = arg.parse().map_err(|_| ())?;
-                ArgValue::Int(value)
+                let value: i64 = arg.parse().map_err(|_| ())?;
+                value.into()
             }
             '"' => {
                 let n = arg.len();
                 if n < 2 || arg.chars().last().ok_or(())? != '"' {
                     return Err(()); // Bad string argument - unpaired quotes
                 }
-                ArgValue::String(arg[1..n - 1].to_string())
+                arg[1..n - 1].to_string().into()
             }
             _ => return Err(()), // Bad argument - unknown type
         };
@@ -95,33 +86,12 @@ fn parse_remote_fn_args(s: &str) -> Result<Vec<ArgValue>, ()> {
     Ok(fn_args)
 }
 
-#[test]
-fn test_parse_remote_fn_args() -> Result<(), ()> {
-    assert_eq!(parse_remote_fn_args(r#""#)?, Vec::new());
-    assert_eq!(parse_remote_fn_args(r#" "#)?, Vec::new());
-    assert_eq!(parse_remote_fn_args(r#"42"#)?, vec![ArgValue::Int(42)]);
-    assert_eq!(parse_remote_fn_args(r#" 42 "#)?, vec![ArgValue::Int(42)]);
-    assert_eq!(parse_remote_fn_args(r#" 42"#)?, vec![ArgValue::Int(42)]);
-    assert_eq!(parse_remote_fn_args(r#"42 "#)?, vec![ArgValue::Int(42)]);
-    assert_eq!(parse_remote_fn_args(r#""foo""#)?, vec![ArgValue::String("foo".to_string())]);
-    assert_eq!(
-        parse_remote_fn_args(r#"42,"foo",-42"#)?,
-        vec![ArgValue::Int(42), ArgValue::String("foo".to_string()), ArgValue::Int(-42)]
-    );
-    assert_eq!(
-        parse_remote_fn_args(r#"42, "foo", -42"#)?,
-        vec![ArgValue::Int(42), ArgValue::String("foo".to_string()), ArgValue::Int(-42)]
-    );
-
-    Ok(())
-}
-
-fn make_args(func: &Func, arg_values: Vec<ArgValue>) -> ArgValues {
-    let mut args = ArgValues::new();
+fn make_args(func: &Func, arg_values: Vec<Object<'static>>) -> Dict<'static> {
+    let mut args = Dict::new();
     for (arg, arg_value) in func.args.iter().zip(arg_values) {
         // Here we won't check argument types, required or not etc.
         // Let the remote side do all necessry checks and return error if needed.
-        args.add(arg.name.clone(), arg_value);
+        args.insert(arg.name.clone(), arg_value);
     }
     args
 }

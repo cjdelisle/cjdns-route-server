@@ -35,7 +35,6 @@ serde_json = "1.0"
 sodiumoxide = { git = "https://github.com/cjdelisle/sodiumoxide", rev = "2c1406ce59c3ebe702cb72b37c67d897e4e2ac34", version = "0.2", default-features = false, features = ["std"] }
 libsodium-sys = { git = "https://github.com/cjdelisle/sodiumoxide", rev = "2c1406ce59c3ebe702cb72b37c67d897e4e2ac34", version = "0.2" }
 ed25519 = "1.5.3" # Sodium includes this as "1" but we depend on things which are not available in older versions.
-bendy = { git = "https://github.com/CJDNS-Development-Team/bendy-cjdns", tag = "v0.3.2-cjdns", features = ["std", "serde"] }
 thiserror = "1.0"
 tokio = { version = "^1", features = ["full"] }
 warp = "0.3"

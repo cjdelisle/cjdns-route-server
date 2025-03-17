@@ -2,10 +2,18 @@
 
 use std::convert::TryFrom;
 
+use eyre::{eyre, Result, OptionExt, Context};
 use regex::Regex;
 
-use cjdns_core::RoutingLabel;
 use cjdns_keys::CJDNSPublicKey;
+
+use crate::RoutingLabel;
+
+pub struct Address {
+    pub version: u16,
+    pub label: RoutingLabel<u64>,
+    pub pubkey: CJDNSPublicKey,
+}
 
 lazy_static! {
     static ref NODE_NAME_RE: Regex = Regex::new(
@@ -16,17 +24,32 @@ lazy_static! {
     .expect("bad regexp");
 }
 
+impl ToString for Address {
+    fn to_string(&self) -> String {
+        format!("v{}.{}.{}", self.version, self.label, self.pubkey)
+    }
+}
+
 /// Gets version, label and public key all together in tuple from `name` argument, if it has valid structure.
 /// Otherwise returns error.
-pub fn parse_node_name(name: &str) -> Result<(u16, RoutingLabel<u64>, CJDNSPublicKey), ()> {
-    if let Some(c) = NODE_NAME_RE.captures(name) {
-        let str_from_captured_group = |group_num: usize| -> &str { c.get(group_num).expect("bad group index").as_str() };
-        let version = str_from_captured_group(1).parse::<u16>().expect("bad regexp - version");
-        let label = RoutingLabel::try_from(str_from_captured_group(2)).expect("bad regexp - label");
-        let public_key = CJDNSPublicKey::try_from(str_from_captured_group(3)).or(Err(()))?;
-        Ok((version, label, public_key))
-    } else {
-        Err(())
+impl TryFrom<&str> for Address {
+    type Error = eyre::Error;
+
+    fn try_from(name: &str) -> eyre::Result<Self> {
+        if let Some(c) = NODE_NAME_RE.captures(name) {
+            let str_from_captured_group = |group_num: usize| -> Result<&str> {
+                Ok(c.get(group_num).ok_or_eyre("bad group index")?.as_str())
+            };
+            let version = str_from_captured_group(1)?.parse::<u16>()
+                .context("Version does not parse")?;
+            let label = RoutingLabel::try_from(str_from_captured_group(2)?)
+                .context("Label does not parse")?;
+            let pubkey = CJDNSPublicKey::try_from(str_from_captured_group(3)?)
+                .context("Key does not parse")?;
+            Ok(Address{ version, label, pubkey })
+        } else {
+            Err(eyre!("Address: {name} does not match regex"))
+        }
     }
 }
 
@@ -37,7 +60,7 @@ fn test_parse_node_name_valid() {
         "v10.0a20.00ff.00e0.9901.qgkjd0stfvk9r3j28s4gh8rgslbgx2r5xgxzxkgm5vdxqwn8xsu0.k",
     ];
     for valid_node_name in valid_node_names {
-        assert!(parse_node_name(valid_node_name).is_ok());
+        assert!(Address::try_from(valid_node_name).is_ok());
     }
 }
 
@@ -55,6 +78,6 @@ fn test_parse_node_name_invalid() {
         "v10.0a20.00ff.00e0.9901.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.k)",
     ];
     for invalid_node_name in invalid_node_names {
-        assert!(parse_node_name(invalid_node_name).is_err());
+        assert!(Address::try_from(invalid_node_name).is_err());
     }
 }
