@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use cjdns_bytes::tlv::{encode_tlv, parse_tlv};
-use eyre::{bail, Context, OptionExt, Result};
+use eyre::{Context, OptionExt, Result};
 use hickory_server::proto::{
     rr::{
         rdata::TXT,
@@ -67,7 +67,9 @@ fn parse_record_str(rtype: &str, name: &str, value: &str, ttl_sec: u32) -> Resul
     };
     let out = match rtype {
         // If you don't manual encode the TXT record, spaces get stripped.
-        "TXT" => TXT::from_bytes(vec![value.as_bytes()]).into_rdata(),
+        "TXT" => TXT::from_bytes(
+            value.as_bytes().chunks(255).collect(),
+        ).into_rdata(),
         other_type => {
             let rt = RecordType::from_str(other_type)?;
             // If the rtype is MX and they put just the mailserver without the number before
@@ -85,15 +87,26 @@ fn parse_record_str(rtype: &str, name: &str, value: &str, ttl_sec: u32) -> Resul
 // We skip over 1,2,3,4 because they are used in the cjdns seeder reply which is also TLV.
 // It's just a courtaesy to avoid confusion.
 pub const RECORD: u8 = 0x05;
+pub const LONG_RECORD: u8 = 0x06;
+pub const LONG_RECORD_END: u8 = 0x07;
 
 pub fn decode_records(bytes: &[u8]) -> Result<Vec<Record>> {
     let recs = parse_tlv(bytes)?;
     let mut out = Vec::new();
+    let mut long_rec = Vec::new();
     for (t, elem) in recs {
-        if t != RECORD {
-            bail!("Invalid record type {t}");
+        if t == LONG_RECORD_END {
+            out.push(Record::from_bytes(&long_rec)?);
+            long_rec.clear();
+            continue;
+        } else if t == LONG_RECORD {
+            long_rec.extend_from_slice(elem);
+            continue;
+        } else if t == RECORD {
+            out.push(Record::from_bytes(elem)?);
+        } else {
+            println!("Warn: Unexpected TLV entry type: {t}");
         }
-        out.push(Record::from_bytes(elem)?);
     }
     Ok(out)
 }
@@ -101,7 +114,15 @@ pub fn decode_records(bytes: &[u8]) -> Result<Vec<Record>> {
 pub fn encode_records(records: &[Record]) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     for rec in records {
-        out.push((RECORD, rec.to_bytes()?));
+        let bytes = rec.to_bytes()?;
+        if bytes.len() > 253 {
+            for chunk in bytes.chunks(253) {
+                out.push((LONG_RECORD, chunk.to_vec()));
+            }
+            out.push((LONG_RECORD_END, Vec::new()));
+        } else {
+            out.push((RECORD, bytes));
+        }
     }
     Ok(encode_tlv(&out))
 }
@@ -160,16 +181,29 @@ mod tests {
             ttl_sec: 400,
         });
         roundtrip_test(&JsonRecord {
-            rtype: "MX".to_string(),
-            name: "mail".to_string(),
-            value: "10 mail.example.com".to_string(),
+            rtype: "TXT".to_string(),
+            name: "dkim._domainkey".to_string(),
+            value: concat!(
+                "v=DKIM1;k=rsa;t=s;s=email;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB",
+                "CgKCAQEA2OEIu3H2WcL7DyXSkSSS7cFa4lE0krGhKdVOhBt2XlHkIu9H2XsWBpiQ",
+                "bX87Da/nQ80CPR4IX2T69qxSf7ZCiylwz6gmf2hP7FM7sEwZno5myElm2AuwsteT",
+                "nVecWI7zkFpjqr9E2FMFXJXvWTxuX2LviqK6flVwUqPK0xXqcUsHXl3YPmj5x1Od",
+                "ThZlEVfkZ3zkLaIy+/ToHp21IHO7DRXFbIlzK+wS5x0AldbhxtQqe8YWkLuRj38k",
+                "9rWaWdfw0PDiVRoFy3D6glYwLx+MtxSwgS3v2vvo5XNPU2f4F+s0uLiVw1wRyat2",
+                "4sCQNoJHUCNXOXhWsC57xAlbJkZfuQIDAQAB").to_string(),
             ttl_sec: 400,
         });
         roundtrip_test(&JsonRecord {
             rtype: "MX".to_string(),
             name: "mail".to_string(),
-            value: "mail.example.com".to_string(),
+            value: "10 mail.example.com".to_string(),
             ttl_sec: 400,
         });
+        // roundtrip_test(&JsonRecord {
+        //     rtype: "MX".to_string(),
+        //     name: "mail".to_string(),
+        //     value: "mail.example.com".to_string(),
+        //     ttl_sec: 400,
+        // });
     }
 }

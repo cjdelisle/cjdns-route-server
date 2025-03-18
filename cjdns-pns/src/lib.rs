@@ -372,9 +372,18 @@ impl Pns {
                 if let Some(recs) = dom.records.get(sub) {
                     println!("  - {} possible records found in {}", recs.len(), dom.name);
                     for rec in recs {
-                        if rec.record_type() == t || t.is_any() || rec.record_type() == RecordType::CNAME {
+                        if rec.record_type() == t || t.is_any() {
                             println!("  - Found record: {rec:?}");
                             out.records.push(rec.clone());
+                        }
+                    }
+                    if out.records.is_empty() {
+                        // Only send CNAMEs if there is nothing directly matching.
+                        for rec in recs {
+                            if rec.record_type() == RecordType::CNAME {
+                                println!("  - Found record: {rec:?}");
+                                out.records.push(rec.clone());
+                            }
                         }
                     }
                 }
